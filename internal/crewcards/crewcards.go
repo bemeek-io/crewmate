@@ -52,9 +52,17 @@ func (r rawCard) toCard() Card {
 	return c
 }
 
-// Fetch returns the user's cards. A nil error with no cards is normal; an
-// error is returned so callers can leave the previous snapshot in place rather
-// than blanking the card list on a transient failure.
+// Fetch returns the user's real debit cards — the one piece of plastic they
+// carry. Crew also issues a virtual card per merchant (a couple dozen on an
+// active account); those are managed in Crew itself and are dropped here so
+// they never reach the snapshot or the home screen.
+//
+// Both card lists are queried because the physical card's list membership
+// isn't guaranteed, and the form factor is the thing actually being selected on.
+//
+// A nil error with no cards is normal; an error is returned so callers can
+// leave the previous snapshot in place rather than blanking the list on a
+// transient failure.
 func Fetch(ctx context.Context, client *crew.Client) ([]Card, error) {
 	var out struct {
 		CurrentUser struct {
@@ -65,10 +73,10 @@ func Fetch(ctx context.Context, client *crew.Client) ([]Card, error) {
 	if err := client.Execute(ctx, query, nil, &out); err != nil {
 		return nil, err
 	}
-	cards := make([]Card, 0, len(out.CurrentUser.DebitCards)+len(out.CurrentUser.VirtualDebitCards))
+	var cards []Card
 	seen := map[string]bool{}
 	for _, r := range append(out.CurrentUser.DebitCards, out.CurrentUser.VirtualDebitCards...) {
-		if r.ID == "" || seen[r.ID] {
+		if r.ID == "" || seen[r.ID] || r.FormFactor != formPhysical {
 			continue
 		}
 		seen[r.ID] = true
@@ -76,6 +84,8 @@ func Fetch(ctx context.Context, client *crew.Client) ([]Card, error) {
 	}
 	return cards, nil
 }
+
+const formPhysical = "PHYSICAL"
 
 // MovePocket points a card's spend at a different pocket.
 func MovePocket(ctx context.Context, client *crew.Client, cardID, subaccountID string) error {

@@ -130,11 +130,11 @@ export default function Recurring() {
             </span>
           </span>
         </button>
-        <div className="chips" style={{ margin: "0 0 10px 26px" }}>
+        <div className="chips tight" style={{ margin: "0 0 10px 26px" }}>
           {LABELS.map((l) => (
             <button
               key={l.key}
-              className={`chip ${s.label_system_key === l.key ? "on" : ""}`}
+              className={`chip sm ${s.label_system_key === l.key ? "on" : ""}`}
               onClick={() =>
                 label.mutate({ id: s.id, key: s.label_system_key === l.key ? null : l.key })
               }
@@ -143,7 +143,7 @@ export default function Recurring() {
             </button>
           ))}
           <button
-            className="chip clear"
+            className="chip sm clear"
             onClick={() => dismiss.mutate({ id: s.id, dismissed: !s.dismissed })}
           >
             {s.dismissed ? "Restore" : "Dismiss"}

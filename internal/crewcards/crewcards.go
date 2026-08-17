@@ -8,6 +8,43 @@ import (
 	crew "github.com/bemeek-io/go-crew"
 )
 
+// selectedSpendQuery reads the pocket the member's physical card is currently
+// set to swipe from.
+//
+// This is User.userSpendConfig.selectedSpendSubaccount — NOT
+// Account.PrimarySubaccount, which is only the account's default and does not
+// change when the spend pocket is repointed. It is also not the bare
+// User.selectedSpendSubaccount in Crew's published docs, which the live schema
+// rejects. The SDK doesn't model userSpendConfig yet, so this is the one
+// remaining raw query.
+const selectedSpendQuery = `query SelectedSpendPocket {
+  currentUser {
+    userSpendConfig {
+      id
+      selectedSpendSubaccount { id name }
+    }
+  }
+}`
+
+// selectedSpendPocket returns the currently selected spend pocket, or nil when
+// the member hasn't chosen one (in which case the account default applies).
+func selectedSpendPocket(ctx context.Context, client *crew.Client) *crew.Subaccount {
+	var out struct {
+		CurrentUser struct {
+			UserSpendConfig *struct {
+				SelectedSpendSubaccount *crew.Subaccount `json:"selectedSpendSubaccount"`
+			} `json:"userSpendConfig"`
+		} `json:"currentUser"`
+	}
+	if err := client.Execute(ctx, selectedSpendQuery, nil, &out); err != nil {
+		return nil
+	}
+	if out.CurrentUser.UserSpendConfig == nil {
+		return nil
+	}
+	return out.CurrentUser.UserSpendConfig.SelectedSpendSubaccount
+}
+
 // Card is a debit card and the pocket it spends from.
 type Card struct {
 	ID             string `json:"id"`
@@ -40,6 +77,8 @@ func Fetch(ctx context.Context, client *crew.Client, accounts []crew.Account) ([
 	for i := range accounts {
 		byID[accounts[i].ID] = &accounts[i]
 	}
+	// The member's explicit choice wins over the account default.
+	selected := selectedSpendPocket(ctx, client)
 
 	var out []Card
 	seen := map[string]bool{}
@@ -60,7 +99,11 @@ func Fetch(ctx context.Context, client *crew.Client, accounts []crew.Account) ([
 		if c.Account != nil {
 			acct = byID[c.Account.ID]
 		}
-		if pocket := c.SpendSubaccount(acct); pocket != nil {
+		pocket := selected
+		if pocket == nil {
+			pocket = c.SpendSubaccount(acct)
+		}
+		if pocket != nil {
 			card.SubaccountID, card.SubaccountName = pocket.ID, pocket.Name
 		}
 		out = append(out, card)

@@ -2,6 +2,7 @@ package push
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/bemeek-io/crewmate/internal/auth"
 	"github.com/bemeek-io/crewmate/internal/httpx"
@@ -66,16 +67,36 @@ func (h *Handlers) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 // when permission was granted in a browser tab rather than the installed app.
 // Without that count a silent phone is indistinguishable from a broken send.
 func (h *Handlers) Test(w http.ResponseWriter, r *http.Request) {
-	userID := auth.UserID(r.Context())
-	subs, err := h.Service.Store.ListPushSubscriptionsForUser(r.Context(), userID)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load your devices")
-		return
-	}
-	h.Service.SendToUser(r.Context(), userID, Notification{
+	results, err := h.Service.SendToUserVerbose(r.Context(), auth.UserID(r.Context()), Notification{
 		Title: "Crewmate",
 		Body:  "Notifications are working 🎉",
 		URL:   "/",
 	})
-	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true, "devices": len(subs)})
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load your devices")
+		return
+	}
+	// A push gateway accepts with 201 (some use 200/202); anything else is why
+	// the phone stayed quiet, so it's reported rather than logged and lost.
+	accepted, problem := 0, ""
+	for _, res := range results {
+		switch {
+		case res.Err != "":
+			problem = res.Err
+		case res.Status >= 200 && res.Status < 300:
+			accepted++
+		default:
+			problem = http.StatusText(res.Status)
+			if problem == "" {
+				problem = "HTTP " + strconv.Itoa(res.Status)
+			}
+			problem = strconv.Itoa(res.Status) + " " + problem
+		}
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"devices":  len(results),
+		"accepted": accepted,
+		"problem":  problem,
+	})
 }

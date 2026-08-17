@@ -12,8 +12,8 @@ export default function Settings() {
   const me = useQuery({ queryKey: ["me"], queryFn: () => get<Me>("/api/me") });
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [busy, setBusy] = useState(false);
-  const [testSent, setTestSent] = useState(false);
-  const [devices, setDevices] = useState<number | null>(null);
+  const [sentOK, setSentOK] = useState(false);
+  const [diagnosis, setDiagnosis] = useState("");
 
   useEffect(() => {
     setPerm(pushSupported() ? Notification.permission : "unsupported");
@@ -29,13 +29,36 @@ export default function Settings() {
     else if (result === "denied") setPerm("denied");
   }
 
+  // A silent phone has three distinct causes and they need different fixes, so
+  // say which one it is rather than reporting a cheerful "sent".
   async function onTest() {
-    // devices === 0 means this browser never registered a subscription, which
-    // on iOS almost always means the app wasn't installed from Safari.
-    const res = await post<{ devices?: number }>("/api/push/test");
-    setDevices(res.devices ?? null);
-    setTestSent(true);
-    setTimeout(() => setTestSent(false), 6000);
+    setDiagnosis("");
+    try {
+      const res = await post<{ devices?: number; accepted?: number; problem?: string }>(
+        "/api/push/test"
+      );
+      if (!res.devices) {
+        setDiagnosis(
+          "This device isn't registered for notifications, so nothing was sent. On iPhone, " +
+            "push only works when the app is added to the Home Screen from Safari — an icon " +
+            "created by Chrome never registers. Reinstall from Safari, open it from the new " +
+            "icon, and turn notifications on there."
+        );
+      } else if (res.problem) {
+        setDiagnosis(
+          `The push service rejected it (${res.problem}). A 403 usually means the server's ` +
+            `VAPID keys changed since this device subscribed — turn notifications off and on ` +
+            `again to re-register.`
+        );
+      } else if (!res.accepted) {
+        setDiagnosis("Accepted by no device. Turn notifications off and on again to re-register.");
+      } else {
+        setSentOK(true);
+        setTimeout(() => setSentOK(false), 4000);
+      }
+    } catch (e) {
+      setDiagnosis(e instanceof Error ? e.message : "Could not reach the server.");
+    }
   }
 
   async function onLogout() {
@@ -82,19 +105,11 @@ export default function Settings() {
               <BellIcon size={18} className="icon-muted" /> Notifications are on
             </p>
             <button className="btn-secondary" onClick={onTest}>
-              {testSent ? "Sent — check your notifications" : "Send test notification"}
+              {sentOK ? "Sent — check your notifications" : "Send test notification"}
             </button>
-            {testSent && devices === 0 && (
+            {diagnosis && (
               <p className="muted small" style={{ marginTop: 10 }}>
-                No registered devices, so nothing was sent. On iPhone, Web Push only works when the
-                app is added to the Home Screen from <b>Safari</b> — a Home Screen icon created by
-                Chrome won’t receive notifications. Open the site in Safari, choose Share → Add to
-                Home Screen, then turn notifications on from inside that app.
-              </p>
-            )}
-            {testSent && devices !== null && devices > 0 && (
-              <p className="muted small" style={{ marginTop: 10 }}>
-                Sent to {devices} device{devices === 1 ? "" : "s"}.
+                {diagnosis}
               </p>
             )}
           </>

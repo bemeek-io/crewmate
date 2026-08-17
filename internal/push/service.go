@@ -54,6 +54,32 @@ func (s *Service) SendToUser(ctx context.Context, userID uuid.UUID, n Notificati
 	s.sendAll(ctx, subs, n)
 }
 
+// SendResult is what one device's push gateway said. The test endpoint returns
+// these so a silent phone can be explained from the phone itself — every other
+// signal here is a log line on the server.
+type SendResult struct {
+	Status int    `json:"status"`
+	Err    string `json:"error,omitempty"`
+}
+
+// SendToUserVerbose sends to the user's devices and reports each outcome.
+// Used only by the test endpoint; normal sends are fire-and-forget.
+func (s *Service) SendToUserVerbose(ctx context.Context, userID uuid.UUID, n Notification) ([]SendResult, error) {
+	subs, err := s.Store.ListPushSubscriptionsForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(n)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SendResult, 0, len(subs))
+	for _, sub := range subs {
+		out = append(out, s.sendOne(ctx, sub, payload))
+	}
+	return out, nil
+}
+
 func (s *Service) sendAll(ctx context.Context, subs []store.PushSubscription, n Notification) {
 	payload, err := json.Marshal(n)
 	if err != nil {
@@ -64,7 +90,7 @@ func (s *Service) sendAll(ctx context.Context, subs []store.PushSubscription, n 
 	}
 }
 
-func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, payload []byte) {
+func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, payload []byte) SendResult {
 	resp, err := webpush.SendNotificationWithContext(ctx, payload, &webpush.Subscription{
 		Endpoint: sub.Endpoint,
 		Keys:     webpush.Keys{P256dh: sub.P256dh, Auth: sub.Auth},
@@ -77,7 +103,7 @@ func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, paylo
 	})
 	if err != nil {
 		s.Log.Warn("web push send failed", zap.Error(err))
-		return
+		return SendResult{Err: err.Error()}
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
@@ -93,4 +119,5 @@ func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, paylo
 			s.Log.Warn("web push non-success", zap.Int("status", resp.StatusCode))
 		}
 	}
+	return SendResult{Status: resp.StatusCode}
 }

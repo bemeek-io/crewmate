@@ -54,15 +54,22 @@ export function useCreateCategory() {
   );
 }
 
-export function useRenameCategory() {
-  return useOptimistic<{ category: Category; name: string }>(
+/** Edit a category's name and/or color. */
+export function useUpdateCategory() {
+  return useOptimistic<{ category: Category; name?: string; color?: string }>(
     (v) =>
       patch(`/api/categories/${v.category.id}`, {
-        name: v.name,
-        color: v.category.color,
+        name: v.name ?? v.category.name,
+        color: v.color ?? v.category.color,
       }),
     (current, v) =>
-      current.map((c) => (c.id === v.category.id ? { ...c, name: v.name } : c)).sort(byName),
+      current
+        .map((c) =>
+          c.id === v.category.id
+            ? { ...c, name: v.name ?? c.name, color: v.color ?? c.color }
+            : c
+        )
+        .sort(byName),
     [["transactions"]]
   );
 }

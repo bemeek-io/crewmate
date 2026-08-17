@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { get } from "../api/client";
 import {
   useCreateCategory,
-  useRenameCategory,
+  useUpdateCategory,
   useDeleteCategory,
   useIgnoreNote,
   useUnignoreNote,
@@ -26,11 +26,35 @@ const COLORS = [
 /** True while a category exists only in the optimistic cache. */
 const isPending = (c: Category) => c.id.startsWith("pending-");
 
+function ColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (c: string) => void;
+}) {
+  return (
+    <div className="color-picker">
+      {COLORS.map((c) => (
+        <button
+          type="button"
+          key={c}
+          aria-label={`Use color ${c}`}
+          aria-pressed={value === c}
+          style={{ background: c }}
+          onClick={() => onChange(c)}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function Categories() {
   const [name, setName] = useState("");
   const [color, setColor] = useState(COLORS[0]);
   const [editing, setEditing] = useState<Category | null>(null);
   const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState("");
 
   const categories = useQuery({
     queryKey: ["categories"],
@@ -42,7 +66,7 @@ export default function Categories() {
   });
 
   const create = useCreateCategory();
-  const rename = useRenameCategory();
+  const update = useUpdateCategory();
   const remove = useDeleteCategory();
   const ignore = useIgnoreNote();
   const unignore = useUnignoreNote();
@@ -54,6 +78,17 @@ export default function Categories() {
     // Optimistic: the row appears before the request resolves.
     create.mutate({ name: trimmed, color });
     setName("");
+  }
+
+  function startEdit(c: Category) {
+    setEditing(c);
+    setEditName(c.name);
+    setEditColor(c.color || COLORS[0]);
+  }
+
+  function saveEdit(c: Category) {
+    update.mutate({ category: c, name: editName.trim() || c.name, color: editColor });
+    setEditing(null);
   }
 
   const notes = unmatched.data?.notes ?? [];
@@ -82,18 +117,7 @@ export default function Categories() {
               Add
             </button>
           </div>
-          <div className="color-picker">
-            {COLORS.map((c) => (
-              <button
-                type="button"
-                key={c}
-                aria-label={`Use color ${c}`}
-                aria-pressed={color === c}
-                style={{ background: c }}
-                onClick={() => setColor(c)}
-              />
-            ))}
-          </div>
+          <ColorPicker value={color} onChange={setColor} />
           {create.isError && <div className="error">Could not add that category.</div>}
         </form>
       </div>
@@ -101,7 +125,7 @@ export default function Categories() {
       {notes.length > 0 && (
         <>
           <h2>Notes found in Crew</h2>
-          <p className="muted small" style={{ marginBottom: 10 }}>
+          <p className="muted small" style={{ marginTop: -8, marginBottom: 12 }}>
             These notes don’t match a category yet. Add one to start using it, or ignore it if
             it’s just a personal note.
           </p>
@@ -140,73 +164,64 @@ export default function Categories() {
       <div className="card">
         {(categories.data?.categories ?? []).map((c) =>
           editing?.id === c.id ? (
-            <div className="row" style={{ padding: "10px 0" }} key={c.id}>
+            <div style={{ padding: "12px 0" }} key={c.id}>
               <input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 maxLength={40}
-                style={{ marginBottom: 0 }}
                 autoFocus
               />
-              <button
-                className="btn-small"
-                style={{ width: "auto" }}
-                disabled={!editName.trim()}
-                onClick={() => {
-                  rename.mutate({ category: c, name: editName.trim() });
-                  setEditing(null);
-                }}
-              >
-                Save
-              </button>
-              <button
-                className="btn-small btn-secondary"
-                style={{ width: "auto" }}
-                onClick={() => setEditing(null)}
-              >
-                ✕
-              </button>
-            </div>
-          ) : (
-            <div className="row spread" style={{ padding: "10px 0" }} key={c.id}>
-              <span
-                className="row"
-                style={{ fontWeight: 600, gap: 10, opacity: isPending(c) ? 0.5 : 1 }}
-              >
-                <span className="swatch" style={c.color ? { background: c.color } : undefined} />
-                {c.name}
-              </span>
-              <div className="row" style={{ gap: 6 }}>
+              <ColorPicker value={editColor} onChange={setEditColor} />
+              <div className="row" style={{ gap: 8, marginTop: 12 }}>
+                <button
+                  className="btn-small"
+                  style={{ width: "auto" }}
+                  disabled={!editName.trim()}
+                  onClick={() => saveEdit(c)}
+                >
+                  Save
+                </button>
                 <button
                   className="btn-small btn-secondary"
                   style={{ width: "auto" }}
-                  // Optimistic rows have a placeholder id until the server
-                  // responds; editing one would target a nonexistent record.
-                  disabled={isPending(c)}
-                  onClick={() => {
-                    setEditing(c);
-                    setEditName(c.name);
-                  }}
+                  onClick={() => setEditing(null)}
                 >
-                  Rename
+                  Cancel
                 </button>
+                <span className="grow" />
                 <button
                   className="btn-small btn-danger"
                   style={{ width: "auto" }}
-                  disabled={isPending(c)}
                   onClick={() => {
                     if (
                       confirm(
                         `Delete "${c.name}"? Transactions keep their note in Crew but will show as Misc.`
                       )
-                    )
+                    ) {
                       remove.mutate(c.id);
+                      setEditing(null);
+                    }
                   }}
                 >
                   Delete
                 </button>
               </div>
             </div>
+          ) : (
+            // The whole row is the edit affordance, so tapping the swatch (or
+            // the name) opens name + color editing.
+            <button
+              className="row spread category-row"
+              key={c.id}
+              disabled={isPending(c)}
+              onClick={() => startEdit(c)}
+            >
+              <span className="row" style={{ gap: 10, opacity: isPending(c) ? 0.5 : 1 }}>
+                <span className="swatch" style={c.color ? { background: c.color } : undefined} />
+                <span style={{ fontWeight: 600 }}>{c.name}</span>
+              </span>
+              <span className="muted small">Edit</span>
+            </button>
           )
         )}
         {categories.data && categories.data.categories.length === 0 && (

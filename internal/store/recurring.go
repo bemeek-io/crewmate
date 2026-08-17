@@ -139,6 +139,48 @@ func (s *Store) SetRecurringDismissed(ctx context.Context, familyID, id uuid.UUI
 	return nil
 }
 
+// MerchantsForClassification lists a family's merchants with enough spend
+// history to be worth classifying. Used to (re)build series from existing
+// transactions rather than only on new ingest.
+func (s *Store) MerchantsForClassification(ctx context.Context, familyID uuid.UUID, minCharges int) ([]string, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT merchant_key FROM transactions
+		WHERE family_id = $1 AND merchant_key <> '' AND amount_cents < 0
+		GROUP BY merchant_key
+		HAVING count(*) >= $2`, familyID, minCharges)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// FamiliesWithTransactions lists families that have any transaction history.
+func (s *Store) FamiliesWithTransactions(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT DISTINCT family_id FROM transactions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // MerchantCharge is one occurrence used for recurring classification.
 type MerchantCharge struct {
 	OccurredAt  time.Time

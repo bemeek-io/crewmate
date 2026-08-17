@@ -33,13 +33,23 @@ const (
 	// window (rather than all history) lets a price increase settle in without
 	// permanently disqualifying the subscription.
 	recentWindow = 4
-	// subscriptions: amounts essentially identical.
-	subAmountSpreadPct = 2 // ≤2% spread across the recent window
-	subAmountSpreadAbs = 100
-	// subscriptions: steady schedule.
-	subIntervalSpreadPct = 20 // coefficient of variation ≤20%
-	subDaySpreadDays     = 4  // monthly-ish charges land within 4 days
-	// recurring: much looser, just "shows up regularly".
+
+	// An identical amount, charge after charge, is the single strongest
+	// subscription signal — nothing else bills $2,514.82 eight times running.
+	// Where the amount is exact, the schedule is allowed to drift more, since
+	// posting dates slip around weekends and month lengths.
+	exactAmountSpreadAbs   = 50 // ≤$0.50 apart counts as identical
+	exactIntervalSpreadPct = 35
+	exactDaySpreadDays     = 10
+
+	// A nearly-fixed amount is weaker evidence, so the schedule has to be
+	// correspondingly tighter.
+	nearAmountSpreadPct   = 2
+	nearIntervalSpreadPct = 20
+	nearDaySpreadDays     = 4
+
+	// recurring: shows up on a rough schedule, or is a fixed cost that repeats
+	// at irregular times (an insurance premium paid whenever it's remembered).
 	recIntervalSpreadPct = 55
 )
 
@@ -239,26 +249,93 @@ func Classify(occ []Occurrence) Analysis {
 	a.Cadence, a.PeriodDays = classifyCadence(medianDays)
 	a.DaySpreadDays = dayOfMonthSpread(times)
 
-	if len(occ) < minOccurrences || a.Cadence == "unknown" {
-		return a
-	}
+	exactAmount := spread <= exactAmountSpreadAbs
+	nearAmount := absTypical > 0 && a.AmountSpreadPct <= nearAmountSpreadPct
 
-	amountFixed := spread <= subAmountSpreadAbs ||
-		(absTypical > 0 && a.AmountSpreadPct <= subAmountSpreadPct)
-	scheduleSteady := intervalSpread <= subIntervalSpreadPct
-	// Monthly and longer cycles should also land on a consistent day.
-	dayConsistent := true
-	if a.Cadence == "monthly" || a.Cadence == "quarterly" || a.Cadence == "yearly" {
-		dayConsistent = a.DaySpreadDays <= subDaySpreadDays
+	if len(occ) >= minOccurrences && a.Cadence != "unknown" {
+		// Day-of-month consistency only means something for monthly and longer
+		// cycles; a weekly charge sweeps the calendar by design.
+		dated := a.Cadence == "monthly" || a.Cadence == "quarterly" || a.Cadence == "yearly"
+		switch {
+		case exactAmount &&
+			intervalSpread <= exactIntervalSpreadPct &&
+			(!dated || a.DaySpreadDays <= exactDaySpreadDays):
+			a.Kind = KindSubscription
+		case nearAmount &&
+			intervalSpread <= nearIntervalSpreadPct &&
+			(!dated || a.DaySpreadDays <= nearDaySpreadDays):
+			a.Kind = KindSubscription
+		}
 	}
-
-	switch {
-	case amountFixed && scheduleSteady && dayConsistent:
-		a.Kind = KindSubscription
-	case intervalSpread <= recIntervalSpreadPct:
-		a.Kind = KindRecurring
+	if a.Kind == KindNone && len(occ) >= minOccurrences {
+		// A fixed cost that repeats is worth surfacing even when the timing is
+		// erratic; so is a varying spend that arrives on a rough schedule.
+		if exactAmount || intervalSpread <= recIntervalSpreadPct {
+			a.Kind = KindRecurring
+		}
 	}
 	return a
+}
+
+// minChargesToClassify: below this a merchant can't show any pattern, so it's
+// skipped entirely rather than stored as kind=none.
+const minChargesToClassify = 3
+
+// ReclassifyFamily rebuilds every merchant's series from stored history.
+//
+// Classification normally runs as transactions arrive, which leaves existing
+// history unclassified after a schema change or a fresh import. This walks the
+// merchants already on file and brings their series up to date. It is
+// idempotent, so concurrent replicas running it are harmless.
+func ReclassifyFamily(ctx context.Context, st *store.Store, familyID uuid.UUID) (int, error) {
+	merchants, err := st.MerchantsForClassification(ctx, familyID, minChargesToClassify)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, m := range merchants {
+		if ctx.Err() != nil {
+			return n, ctx.Err()
+		}
+		history, err := st.MerchantHistory(ctx, familyID, m)
+		if err != nil {
+			return n, err
+		}
+		if len(history) == 0 {
+			continue
+		}
+		occ := make([]Occurrence, 0, len(history))
+		for _, h := range history {
+			occ = append(occ, Occurrence{At: h.OccurredAt, AmountCents: h.AmountCents})
+		}
+		a := Classify(occ)
+		if _, err := st.UpsertRecurringSeries(ctx, toUpsert(familyID, m, a)); err != nil {
+			return n, err
+		}
+		if a.Kind != KindNone {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func toUpsert(familyID uuid.UUID, merchantKey string, a Analysis) store.RecurringUpsert {
+	return store.RecurringUpsert{
+		FamilyID:           familyID,
+		MerchantKey:        merchantKey,
+		Kind:               a.Kind,
+		TypicalAmountCents: a.TypicalAmountCent,
+		MinAmountCents:     a.MinAmountCents,
+		MaxAmountCents:     a.MaxAmountCents,
+		Cadence:            a.Cadence,
+		PeriodDays:         a.PeriodDays,
+		IntervalSpreadPct:  a.IntervalSpreadPct,
+		AmountSpreadPct:    a.AmountSpreadPct,
+		DaySpreadDays:      a.DaySpreadDays,
+		FirstSeenAt:        a.FirstSeen,
+		LastSeenAt:         a.LastSeen,
+		OccurrenceCount:    a.Count,
+	}
 }
 
 // UpdateRecurring folds a transaction into its merchant's series, reclassifies
@@ -280,20 +357,5 @@ func UpdateRecurring(ctx context.Context, st *store.Store, familyID uuid.UUID, m
 	if a.Count == 0 {
 		return uuid.Nil, nil
 	}
-	return st.UpsertRecurringSeries(ctx, store.RecurringUpsert{
-		FamilyID:           familyID,
-		MerchantKey:        merchantKey,
-		Kind:               a.Kind,
-		TypicalAmountCents: a.TypicalAmountCent,
-		MinAmountCents:     a.MinAmountCents,
-		MaxAmountCents:     a.MaxAmountCents,
-		Cadence:            a.Cadence,
-		PeriodDays:         a.PeriodDays,
-		IntervalSpreadPct:  a.IntervalSpreadPct,
-		AmountSpreadPct:    a.AmountSpreadPct,
-		DaySpreadDays:      a.DaySpreadDays,
-		FirstSeenAt:        a.FirstSeen,
-		LastSeenAt:         a.LastSeen,
-		OccurrenceCount:    a.Count,
-	})
+	return st.UpsertRecurringSeries(ctx, toUpsert(familyID, merchantKey, a))
 }

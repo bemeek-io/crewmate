@@ -17,6 +17,7 @@ import (
 	"github.com/bemeek-io/crewmate/internal/crypto"
 	"github.com/bemeek-io/crewmate/internal/push"
 	"github.com/bemeek-io/crewmate/internal/store"
+	"github.com/google/uuid"
 )
 
 const (
@@ -190,6 +191,17 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 	// held this connection must be ingested by us first.
 	if err := r.reconcile(ctx, client, log); err != nil {
 		return err
+	}
+
+	// Rebuild recurring classifications from stored history. Detection
+	// otherwise only runs on new ingest, which leaves imported or migrated
+	// history unclassified.
+	if r.Conn.FamilyID != uuid.Nil {
+		if n, err := categorize.ReclassifyFamily(ctx, r.Store, r.Conn.FamilyID); err != nil {
+			log.Warn("reclassify recurring", zap.Error(err))
+		} else if n > 0 {
+			log.Info("classified recurring merchants", zap.Int("count", n))
+		}
 	}
 
 	if err := client.StartWatching(ctx); err != nil {

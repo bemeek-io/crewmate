@@ -294,6 +294,20 @@ select:focus {
   background: var(--accent-dark);
 }
 
+/* Whole-row tap target for editing a category. */
+.category-row {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 12px 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.category-row:disabled {
+  cursor: default;
+}
+
 /* Expandable recurring-series row. */
 .series-row {
   border-bottom: 1px solid var(--border);

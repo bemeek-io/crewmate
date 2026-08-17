@@ -137,6 +137,50 @@ func TestClassifyOtherCadences(t *testing.T) {
 	}
 }
 
+// An identical amount is the strongest signal there is, so a couple of days of
+// posting drift shouldn't demote a subscription (seen with GitHub, Adobe).
+func TestClassifyIdenticalAmountToleratesPostingDrift(t *testing.T) {
+	a := Classify(occ(
+		at(2026, 2, 3), -430,
+		at(2026, 3, 9), -430,
+		at(2026, 4, 2), -430,
+		at(2026, 5, 8), -430,
+		at(2026, 6, 4), -430,
+	))
+	if a.Kind != KindSubscription {
+		t.Fatalf("kind = %q, want subscription (interval %d%%, day spread %d)",
+			a.Kind, a.IntervalSpreadPct, a.DaySpreadDays)
+	}
+}
+
+// A fixed obligation paid at erratic times is still worth surfacing — just not
+// as a subscription (seen with an insurance premium and a loan payment).
+func TestClassifyFixedAmountErraticTimingIsRecurring(t *testing.T) {
+	a := Classify(occ(
+		at(2026, 1, 5), -5075,
+		at(2026, 2, 4), -5075,
+		at(2026, 5, 6), -5075,
+		at(2026, 6, 5), -5075,
+	))
+	if a.Kind != KindRecurring {
+		t.Fatalf("kind = %q, want recurring (interval spread %d%%)", a.Kind, a.IntervalSpreadPct)
+	}
+}
+
+// Guard against the original complaint returning: high amount variance must
+// never read as a subscription, however regular the timing.
+func TestClassifyVariableAmountNeverSubscription(t *testing.T) {
+	a := Classify(occ(
+		at(2026, 3, 1), -4700,
+		at(2026, 3, 15), -21200,
+		at(2026, 3, 29), -9300,
+		at(2026, 4, 12), -15600,
+	))
+	if a.Kind == KindSubscription {
+		t.Fatalf("kind = subscription, want not (amount spread %d%%)", a.AmountSpreadPct)
+	}
+}
+
 func TestDayOfMonthSpreadWrapsAroundMonthEnd(t *testing.T) {
 	// The 30th and the 1st are two days apart, not 29.
 	got := dayOfMonthSpread([]time.Time{at(2026, 3, 30), at(2026, 5, 1), at(2026, 6, 1)})

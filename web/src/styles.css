@@ -38,7 +38,7 @@ body {
 
 .app-main {
   flex: 1;
-  padding: calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 84px);
+  padding: calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 96px);
   max-width: 560px;
   width: 100%;
   margin: 0 auto;
@@ -188,23 +188,66 @@ select:focus {
   padding-bottom: env(safe-area-inset-bottom);
   z-index: 10;
 }
-.tabbar a {
+.tabbar a,
+.tabbar button {
   flex: 1;
   text-align: center;
-  padding: 10px 0 8px;
+  padding: 13px 0 11px;
   color: var(--muted);
   text-decoration: none;
-  font-size: 0.68rem;
+  font-size: 0.74rem;
+  font-weight: 500;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
 }
-.tabbar a .icon {
+.tabbar a .icon,
+.tabbar button .icon {
   display: flex;
   justify-content: center;
   line-height: 0;
 }
-.tabbar a.active {
+.tabbar a.active,
+.tabbar button.active {
+  color: var(--accent);
+}
+
+/* "More" sheet: the overflow destinations that don't get a tab slot. */
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 11;
+}
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(66px + env(safe-area-inset-bottom));
+  z-index: 12;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 0;
+}
+.sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 18px;
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+.sheet-item:last-child {
+  border-bottom: 0;
+}
+.sheet-item.active {
   color: var(--accent);
 }
 

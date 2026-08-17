@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { get } from "./api/client";
@@ -10,6 +10,10 @@ import {
   TagIcon,
   RepeatIcon,
   SettingsIcon,
+  MenuIcon,
+  SlidersIcon,
+  UsersIcon,
+  ChevronRightIcon,
 } from "./components/Icons";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
@@ -22,23 +26,63 @@ import Recurring from "./pages/Recurring";
 import Family from "./pages/Family";
 import Settings from "./pages/Settings";
 
+/** Everything that doesn't earn a permanent tab slot. */
+const MENU_ITEMS = [
+  { to: "/categories", Icon: TagIcon, label: "Categories" },
+  { to: "/rules", Icon: SlidersIcon, label: "Rules" },
+  { to: "/family", Icon: UsersIcon, label: "Family" },
+  { to: "/settings", Icon: SettingsIcon, label: "Settings" },
+];
+
 function TabBar() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+
+  // Close the sheet whenever navigation lands somewhere new.
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+
   const tab = (to: string, Icon: (p: { size?: number }) => JSX.Element, label: string) => (
-    <NavLink to={to} className={({ isActive }) => (isActive ? "active" : "")}>
+    <NavLink to={to} className={({ isActive }) => (isActive ? "active" : "")} end={to === "/"}>
       <span className="icon">
-        <Icon size={21} />
+        <Icon size={24} />
       </span>
       {label}
     </NavLink>
   );
+  const menuActive = MENU_ITEMS.some((m) => location.pathname.startsWith(m.to));
+
   return (
-    <nav className="tabbar">
-      {tab("/", HomeIcon, "Home")}
-      {tab("/transactions", ActivityIcon, "Activity")}
-      {tab("/categories", TagIcon, "Categories")}
-      {tab("/recurring", RepeatIcon, "Recurring")}
-      {tab("/settings", SettingsIcon, "Settings")}
-    </nav>
+    <>
+      {menuOpen && (
+        <>
+          <div className="sheet-scrim" onClick={() => setMenuOpen(false)} />
+          <div className="sheet" role="dialog" aria-label="More">
+            {MENU_ITEMS.map(({ to, Icon, label }) => (
+              <NavLink key={to} to={to} className="sheet-item">
+                <Icon size={20} />
+                <span className="grow">{label}</span>
+                <ChevronRightIcon size={16} />
+              </NavLink>
+            ))}
+          </div>
+        </>
+      )}
+      <nav className="tabbar">
+        {tab("/", HomeIcon, "Home")}
+        {tab("/transactions", ActivityIcon, "Activity")}
+        {tab("/recurring", RepeatIcon, "Recurring")}
+        <button
+          className={menuActive || menuOpen ? "active" : ""}
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-expanded={menuOpen}
+        >
+          <span className="icon">
+            <MenuIcon size={24} />
+          </span>
+          More
+        </button>
+      </nav>
+    </>
   );
 }
 

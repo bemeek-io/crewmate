@@ -81,6 +81,7 @@ function SeriesDetail({ id }: { id: string }) {
 export default function Recurring() {
   const qc = useQueryClient();
   const [open, setOpen] = useState<string | null>(null);
+  const [showDismissed, setShowDismissed] = useState(false);
 
   const series = useQuery({
     queryKey: ["recurring"],
@@ -187,10 +188,27 @@ export default function Recurring() {
         </>
       )}
 
+      {/* Collapsed by default: dismissing is reversible, so this has to be
+          findable later, but it shouldn't crowd the active lists. */}
       {dismissed.length > 0 && (
         <>
-          <h2>Dismissed</h2>
-          <div className="card">{dismissed.map(renderItem)}</div>
+          <button
+            className="row series-toggle"
+            style={{ width: "100%", padding: "18px 0 10px" }}
+            onClick={() => setShowDismissed(!showDismissed)}
+            aria-expanded={showDismissed}
+          >
+            <span className="icon-muted" style={{ lineHeight: 0 }}>
+              {showDismissed ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
+            </span>
+            <span className="grow" style={{ textAlign: "left" }}>
+              <span className="txn-title">Dismissed ({dismissed.length})</span>
+              <span className="muted small" style={{ display: "block" }}>
+                Tap Restore on any of these to bring it back.
+              </span>
+            </span>
+          </button>
+          {showDismissed && <div className="card">{dismissed.map(renderItem)}</div>}
         </>
       )}
     </>

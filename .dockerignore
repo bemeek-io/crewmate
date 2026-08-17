@@ -1,0 +1,14 @@
+# The backend stage does `COPY . .`, so anything not excluded here lands in an
+# image layer. The deployed .env sits next to the compose file on the host and
+# must never be one of them.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+web/node_modules
+web/dist
+docker-compose.local.yml
+*.log
+crewmate

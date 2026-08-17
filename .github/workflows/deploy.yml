@@ -1,0 +1,146 @@
+name: Deploy Crewmate
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # Gate the deploy on a build + test. The image is built on the target host,
+  # so without this a compile error is only discovered halfway through a deploy.
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go vet ./...
+      - run: go test ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+        working-directory: web
+      # Typechecks as well as bundles — `tsc -b && vite build`.
+      - run: npm run build
+        working-directory: web
+
+  deploy:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      HOST: 10.0.0.22
+      USER: ben
+      DEPLOY_DIR: /opt/crewmate
+    concurrency:
+      group: deploy-crewmate
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Cloudflare WARP
+        uses: Boostport/setup-cloudflare-warp@v1
+        with:
+          version: 2025.6.1335.0
+          organization: bemeek
+          auth_client_id: ${{ secrets.CLOUDFLARE_CLIENT_ID }}
+          auth_client_secret: ${{ secrets.CLOUDFLARE_CLIENT_SECRET }}
+
+      # scp overwrites but never deletes, so a file removed from the repo would
+      # linger and get compiled into the next image. Clear the source trees
+      # first; .env, the compose volumes and pgdata all live outside them.
+      - name: Clear stale sources
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          key: ${{ secrets.BEMEEK_SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            mkdir -p ${{ env.DEPLOY_DIR }}
+            cd ${{ env.DEPLOY_DIR }}
+            rm -rf cmd internal web
+
+      - name: Copy files to remote
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          key: ${{ secrets.BEMEEK_SSH_PRIVATE_KEY }}
+          source: "Dockerfile,.dockerignore,docker-compose.yml,Caddyfile,go.mod,go.sum,cmd,internal,web"
+          target: ${{ env.DEPLOY_DIR }}
+          overwrite: true
+
+      # Written fresh each deploy so rotating a value in GitHub is enough — the
+      # host is never the source of truth for a secret. Compose reads this file
+      # both for ${VAR} substitution and as the app's env_file.
+      - name: Write environment file
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          key: ${{ secrets.BEMEEK_SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            cd ${{ env.DEPLOY_DIR }}
+            umask 077
+            cat > .env <<'CREWMATE_ENV'
+            APP_BASE_URL=${{ vars.APP_BASE_URL }}
+            APP_DOMAIN=${{ vars.APP_DOMAIN }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            CREW_TOKEN_ENC_KEY=${{ secrets.CREW_TOKEN_ENC_KEY }}
+            VAPID_PUBLIC_KEY=${{ secrets.VAPID_PUBLIC_KEY }}
+            VAPID_PRIVATE_KEY=${{ secrets.VAPID_PRIVATE_KEY }}
+            VAPID_SUBJECT=${{ secrets.VAPID_SUBJECT }}
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+            CREWMATE_ENV
+
+      - name: Build and deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          key: ${{ secrets.BEMEEK_SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            cd ${{ env.DEPLOY_DIR }}
+
+            docker compose build app
+            docker compose up -d --remove-orphans
+
+            # Migrations run at boot, so give the app a moment to become ready
+            # before calling the deploy good. The app publishes an ephemeral
+            # host port; ask compose which one.
+            addr="$(docker compose port app 8080)"
+            for i in $(seq 1 30); do
+              if curl -fsS "http://${addr}/api/health" >/dev/null; then
+                echo "healthy after ${i}s"
+                exit 0
+              fi
+              sleep 1
+            done
+
+            echo "app did not become healthy" >&2
+            docker compose logs --tail=50 app >&2
+            exit 1
+
+      - name: Prune old images
+        if: success()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          key: ${{ secrets.BEMEEK_SSH_PRIVATE_KEY }}
+          script: docker image prune -f

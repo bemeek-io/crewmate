@@ -59,11 +59,23 @@ func (h *Handlers) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 // Test handles POST /api/push/test — sends a self-test notification.
+//
+// It reports how many devices were targeted. Zero is the interesting answer:
+// it means this device never registered, which is the usual story on iOS when
+// the app was added to the Home Screen from a browser other than Safari, or
+// when permission was granted in a browser tab rather than the installed app.
+// Without that count a silent phone is indistinguishable from a broken send.
 func (h *Handlers) Test(w http.ResponseWriter, r *http.Request) {
-	h.Service.SendToUser(r.Context(), auth.UserID(r.Context()), Notification{
+	userID := auth.UserID(r.Context())
+	subs, err := h.Service.Store.ListPushSubscriptionsForUser(r.Context(), userID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load your devices")
+		return
+	}
+	h.Service.SendToUser(r.Context(), userID, Notification{
 		Title: "Crewmate",
 		Body:  "Notifications are working 🎉",
 		URL:   "/",
 	})
-	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})
+	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true, "devices": len(subs)})
 }

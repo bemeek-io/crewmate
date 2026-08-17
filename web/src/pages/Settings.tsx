@@ -13,6 +13,7 @@ export default function Settings() {
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [busy, setBusy] = useState(false);
   const [testSent, setTestSent] = useState(false);
+  const [devices, setDevices] = useState<number | null>(null);
 
   useEffect(() => {
     setPerm(pushSupported() ? Notification.permission : "unsupported");
@@ -29,9 +30,12 @@ export default function Settings() {
   }
 
   async function onTest() {
-    await post("/api/push/test");
+    // devices === 0 means this browser never registered a subscription, which
+    // on iOS almost always means the app wasn't installed from Safari.
+    const res = await post<{ devices?: number }>("/api/push/test");
+    setDevices(res.devices ?? null);
     setTestSent(true);
-    setTimeout(() => setTestSent(false), 4000);
+    setTimeout(() => setTestSent(false), 6000);
   }
 
   async function onLogout() {
@@ -80,6 +84,19 @@ export default function Settings() {
             <button className="btn-secondary" onClick={onTest}>
               {testSent ? "Sent — check your notifications" : "Send test notification"}
             </button>
+            {testSent && devices === 0 && (
+              <p className="muted small" style={{ marginTop: 10 }}>
+                No registered devices, so nothing was sent. On iPhone, Web Push only works when the
+                app is added to the Home Screen from <b>Safari</b> — a Home Screen icon created by
+                Chrome won’t receive notifications. Open the site in Safari, choose Share → Add to
+                Home Screen, then turn notifications on from inside that app.
+              </p>
+            )}
+            {testSent && devices !== null && devices > 0 && (
+              <p className="muted small" style={{ marginTop: 10 }}>
+                Sent to {devices} device{devices === 1 ? "" : "s"}.
+              </p>
+            )}
           </>
         ) : perm === "denied" ? (
           <p className="muted">

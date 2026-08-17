@@ -195,6 +195,11 @@ type TxnFilter struct {
 	Uncategorized bool
 	// Query matches merchant, note, or memo text, case-insensitively.
 	Query string
+	// Since/Until bound occurred_at as [Since, Until).
+	Since *time.Time
+	Until *time.Time
+	// Direction restricts to money in ("income") or out ("expense").
+	Direction string
 }
 
 func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnFilter) ([]*Transaction, error) {
@@ -219,6 +224,18 @@ func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnF
 	case f.Uncategorized:
 		// No note, or a note that doesn't name one of the family's categories.
 		q += ` AND c.id IS NULL`
+	}
+	if f.Since != nil {
+		q += ` AND t.occurred_at >= ` + arg(*f.Since)
+	}
+	if f.Until != nil {
+		q += ` AND t.occurred_at < ` + arg(*f.Until)
+	}
+	switch f.Direction {
+	case DirectionIncome:
+		q += ` AND t.amount_cents > 0`
+	case DirectionExpense:
+		q += ` AND t.amount_cents < 0`
 	}
 	if term := strings.TrimSpace(f.Query); term != "" {
 		p := arg("%" + term + "%")

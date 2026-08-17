@@ -79,6 +79,29 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 			f.CategoryIDs = append(f.CategoryIDs, id)
 		}
 	}
+	// Window + direction, so a cash flow row can drill into its transactions.
+	for _, p := range []struct {
+		key string
+		dst **time.Time
+	}{{"since", &f.Since}, {"until", &f.Until}} {
+		v := q.Get(p.key)
+		if v == "" {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid "+p.key)
+			return
+		}
+		*p.dst = &ts
+	}
+	switch d := q.Get("direction"); d {
+	case "", store.DirectionIncome, store.DirectionExpense:
+		f.Direction = d
+	default:
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "direction must be income or expense")
+		return
+	}
 	if v := q.Get("before"); v != "" {
 		parts := strings.SplitN(v, ",", 2)
 		if len(parts) != 2 {

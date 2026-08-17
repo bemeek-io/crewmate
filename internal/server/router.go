@@ -92,6 +92,7 @@ func NewRouter(d Deps) http.Handler {
 			fr.Get("/accounts", d.Crew.Accounts)
 			fr.Put("/cards/{cardID}/pocket", d.Crew.MoveCardPocket)
 
+			fr.Get("/cashflow", d.Txns.CashFlow)
 			fr.Get("/transactions", d.Txns.List)
 			fr.Get("/transactions/{id}", d.Txns.Get)
 			fr.Patch("/transactions/{id}/category", d.Txns.SetCategory)

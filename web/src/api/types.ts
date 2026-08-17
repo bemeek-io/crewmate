@@ -140,3 +140,24 @@ export interface FamilyInfo {
     joined_at: string;
   }[];
 }
+
+export interface CashFlowEntry {
+  category_id: string | null;
+  category_name: string;
+  color: string;
+  system_key: string | null;
+  cents: number;
+  count: number;
+}
+
+export interface CashFlow {
+  range: string;
+  range_label: string;
+  start: string;
+  end: string;
+  income: CashFlowEntry[];
+  expenses: CashFlowEntry[];
+  income_cents: number;
+  expense_cents: number;
+  net_cents: number;
+}

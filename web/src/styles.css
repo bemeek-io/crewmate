@@ -511,6 +511,25 @@ select:focus {
   height: 100%;
   background: var(--accent);
 }
+/* Spending outran income for the window. */
+.goalbar > div.over {
+  background: var(--danger);
+}
+
+/* Cash flow: the category swatch beside each line. */
+.cat-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+/* Surplus/deficit headline. A deficit has to look different from a balance. */
+.balance-big.surplus {
+  color: var(--accent);
+}
+.balance-big.deficit {
+  color: var(--danger);
+}
 /* Breathing room so the "% of goal" caption never touches the bar. */
 .goal-caption {
   margin-top: 7px;

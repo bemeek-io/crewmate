@@ -35,6 +35,14 @@ export const HomeIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const ChartIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20V4" />
+    <path d="M4 20h16" />
+    <path d="M8 20v-6M13 20V8M18 20v-9" />
+  </Icon>
+);
+
 export const MenuIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 7h16M4 12h16M4 17h16" />

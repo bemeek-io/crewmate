@@ -100,7 +100,7 @@ func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, paylo
 		Endpoint: sub.Endpoint,
 		Keys:     webpush.Keys{P256dh: sub.P256dh, Auth: sub.Auth},
 	}, &webpush.Options{
-		Subscriber:      s.Subject,
+		Subscriber:      vapidSubscriber(s.Subject),
 		VAPIDPublicKey:  s.VAPIDPublicKey,
 		VAPIDPrivateKey: s.VAPIDPrivateKey,
 		TTL:             3600,
@@ -146,6 +146,23 @@ func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, paylo
 		}
 	}
 	return SendResult{Status: resp.StatusCode, Err: detail}
+}
+
+// vapidSubscriber adapts our VAPID_SUBJECT to what webpush-go expects.
+//
+// The library takes a bare e-mail address and adds the scheme itself:
+//
+//	if !strings.HasPrefix(subscriber, "https:") { subscriber = "mailto:" + subscriber }
+//
+// so handing it the "mailto:you@example.com" that VAPID_SUBJECT is required to
+// contain signs sub as "mailto:mailto:you@example.com". Apple validates sub and
+// rejects that with BadJwtToken — an error that points at the signature and
+// sends you auditing keys that are fine. FCM ignores sub, so it only ever
+// breaks on iOS.
+//
+// https: subjects are already in the form the library wants and pass through.
+func vapidSubscriber(subject string) string {
+	return strings.TrimPrefix(subject, "mailto:")
 }
 
 // clockSkew compares this host's clock to a gateway's Date header, reporting

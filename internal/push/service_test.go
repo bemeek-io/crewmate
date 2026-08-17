@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // A VAPID token carries an absolute expiry, so a wrong clock on this host
@@ -41,3 +43,5 @@ func TestClockSkew(t *testing.T) {
 		})
 	}
 }
+
+func testLogger() *zap.Logger { return zap.NewNop() }

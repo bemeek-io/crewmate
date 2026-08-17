@@ -516,6 +516,27 @@ select:focus {
   background: var(--danger);
 }
 
+/* Back control on detail pages. Sits above the title, not inline with it, so
+   the heading keeps its full width on a narrow screen. */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: auto;
+  margin: 0 0 2px -6px;
+  padding: 6px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.back-link:active {
+  color: var(--text);
+}
+
 /* Cash flow: the category swatch beside each line. */
 .cat-dot {
   width: 9px;

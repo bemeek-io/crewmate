@@ -1,17 +1,28 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { get, patch, fmtCents, ApiError } from "../api/client";
 import { useAddCategoryFromNote, useIgnoreNote } from "../api/categories";
 import type { Category, Txn } from "../api/types";
+import { ChevronLeftIcon } from "../components/Icons";
 
 export default function TransactionDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
-  const [applyToMerchant, setApplyToMerchant] = useState(true);
+  // Off by default: labelling one transaction shouldn't quietly rewrite notes
+  // on past ones. Opting in is a deliberate choice.
+  const [applyToMerchant, setApplyToMerchant] = useState(false);
   const [error, setError] = useState("");
+
+  // Opening this page from a push notification is a fresh history entry with
+  // nothing to pop, so fall back to the transaction list.
+  const goBack = () => {
+    if (location.key === "default") navigate("/transactions");
+    else navigate(-1);
+  };
 
   const txn = useQuery({
     queryKey: ["transaction", id],
@@ -34,7 +45,9 @@ export default function TransactionDetail() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["transactions"] });
       await qc.invalidateQueries({ queryKey: ["transaction", id] });
-      navigate(-1);
+      // Cash flow totals shift when a category changes.
+      await qc.invalidateQueries({ queryKey: ["cashflow"] });
+      goBack();
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Could not save"),
   });
@@ -58,6 +71,10 @@ export default function TransactionDetail() {
 
   return (
     <>
+      <button className="back-link" onClick={goBack}>
+        <ChevronLeftIcon size={17} />
+        Back
+      </button>
       <h1>Transaction</h1>
       <div className="card" style={{ textAlign: "center" }}>
         <div className="txn-logo" style={{ margin: "0 auto 10px", width: 56, height: 56 }}>
@@ -146,7 +163,7 @@ export default function TransactionDetail() {
           </span>
         </label>
       )}
-      <p className="muted small">
+      <p className="muted small" style={{ marginBottom: 18 }}>
         Saving writes the category to this transaction’s note in Crew, so it appears in the Crew
         app as well.
       </p>

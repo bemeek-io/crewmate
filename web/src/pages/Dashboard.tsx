@@ -20,16 +20,27 @@ function ago(iso: string): string {
  */
 const isExternal = (a: Account) => a.type?.toUpperCase().startsWith("EXTERNAL");
 
-const isLive = (c: Card) => c.status !== "CANCELED" && c.status !== "EXPIRED";
+/**
+ * Crew issues a virtual card per merchant, so one account easily carries
+ * dozens. Only ACTIVATED cards can spend — deactivated, canceled and expired
+ * ones are noise on the home screen.
+ */
+const isLive = (c: Card) => c.status === "ACTIVATED";
+const isPhysical = (c: Card) => c.form_factor === "PHYSICAL";
 
+/** Physical cards come back unnamed; virtual ones carry their merchant name. */
 function cardLabel(c: Card): string {
-  return c.last_four ? `•••• ${c.last_four}` : c.name || "Card";
+  const name = c.name?.trim();
+  if (name) return name;
+  if (isPhysical(c)) return c.last_four ? `Physical •••• ${c.last_four}` : "Physical card";
+  return c.last_four ? `•••• ${c.last_four}` : "Virtual card";
 }
 
 export default function Dashboard() {
   const qc = useQueryClient();
   // Which card the member is currently relocating (their own cards only).
   const [moving, setMoving] = useState<Card | null>(null);
+  const [showVirtual, setShowVirtual] = useState(false);
   const [error, setError] = useState("");
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => get<Me>("/api/me") });
@@ -103,6 +114,11 @@ export default function Dashboard() {
         // your Crew connection.
         const isSelf = m.user_id === me.data?.user.id;
         const cards = (m.cards ?? []).filter(isLive);
+        // The physical card is the one people mean by "my card"; the merchant
+        // virtual cards go behind a disclosure so they don't bury the page.
+        const physical = cards.filter(isPhysical);
+        const virtual = cards.filter((c) => !isPhysical(c));
+        const pickable = showVirtual ? [...physical, ...virtual] : physical;
         return (
           <section key={m.user_id}>
             <h2>
@@ -120,7 +136,12 @@ export default function Dashboard() {
                         p.goal && p.goal > 0
                           ? Math.min(100, Math.round((p.overallBalance / p.goal) * 100))
                           : null;
+                      // A pocket can hold one physical card and many virtual
+                      // ones; badge the physical card by name and collapse the
+                      // merchant cards into a single count.
                       const here = cards.filter((c) => c.subaccount_id === p.id);
+                      const physHere = here.filter(isPhysical);
+                      const virtHere = here.length - physHere.length;
                       const isTarget = moving && moving.subaccount_id !== p.id;
                       return (
                         <div
@@ -136,12 +157,21 @@ export default function Dashboard() {
                           <div className="row spread">
                             <span className="row grow" style={{ gap: 8 }}>
                               {p.name}
-                              {here.map((c) => (
+                              {physHere.map((c) => (
                                 <span className="card-badge" key={c.id} title={cardLabel(c)}>
                                   <CardIcon size={14} />
                                   {c.last_four}
                                 </span>
                               ))}
+                              {virtHere > 0 && (
+                                <span
+                                  className="card-badge"
+                                  title={`${virtHere} virtual card${virtHere === 1 ? "" : "s"}`}
+                                >
+                                  <CardIcon size={14} />
+                                  {virtHere} virtual
+                                </span>
+                              )}
                             </span>
                             <span className="txn-amount">{fmtCents(p.overallBalance)}</span>
                           </div>
@@ -176,7 +206,7 @@ export default function Dashboard() {
                     : "Tap a card to move which pocket it spends from."}
                 </div>
                 <div className="chips" style={{ margin: 0 }}>
-                  {cards.map((c) => (
+                  {pickable.map((c) => (
                     <button
                       key={c.id}
                       className={`chip ${moving?.id === c.id ? "on" : ""}`}
@@ -184,9 +214,16 @@ export default function Dashboard() {
                     >
                       <CardIcon size={14} />
                       {cardLabel(c)}
-                      {c.subaccount_name ? ` · ${c.subaccount_name}` : ""}
+                      {c.subaccount_name ? ` · ${c.subaccount_name}` : " · no pocket set"}
                     </button>
                   ))}
+                  {virtual.length > 0 && (
+                    <button className="chip clear" onClick={() => setShowVirtual(!showVirtual)}>
+                      {showVirtual
+                        ? "Hide virtual cards"
+                        : `Show ${virtual.length} virtual card${virtual.length === 1 ? "" : "s"}`}
+                    </button>
+                  )}
                   {moving && (
                     <button className="chip clear" onClick={() => setMoving(null)}>
                       Cancel

@@ -149,18 +149,19 @@ func run() error {
 	}
 
 	handler := server.NewRouter(server.Deps{
-		Log:        log,
-		Store:      st,
-		Auth:       authH,
-		Sessions:   sessions,
-		Family:     familyH,
-		Crew:       crewH,
-		Txns:       txnsH,
-		Categories: catsH,
-		Push:       pushH,
-		AppBaseURL: cfg.AppBaseURL,
-		TrustProxy: cfg.TrustProxy,
-		WebDist:    dist,
+		Log:          log,
+		Store:        st,
+		Auth:         authH,
+		Sessions:     sessions,
+		Family:       familyH,
+		Crew:         crewH,
+		Txns:         txnsH,
+		Categories:   catsH,
+		Push:         pushH,
+		AppBaseURL:   cfg.AppBaseURL,
+		RequireHTTPS: cfg.RequireHTTPS,
+		TrustProxy:   cfg.TrustProxy,
+		WebDist:      dist,
 	})
 
 	go janitor(rootCtx, st, log)

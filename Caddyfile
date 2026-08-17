@@ -1,5 +1,17 @@
+# Financial data never travels in the clear. Caddy provisions a certificate
+# for {$APP_DOMAIN} automatically and redirects http://{$APP_DOMAIN} to https
+# without being asked — port 80 exists only to serve that redirect and the ACME
+# challenge, never the app. A request arriving on any other hostname matches no
+# site and gets a 404, so the app is not reachable by IP.
+#
+# For a host with no publicly resolvable name, set APP_DOMAIN to the internal
+# hostname and uncomment `tls internal`: Caddy issues its own certificate,
+# trusted once its root CA is installed on the devices. Don't fall back to
+# plain http — the app refuses to boot with a non-https APP_BASE_URL, and iOS
+# will not register a service worker or Web Push without a secure context.
 {$APP_DOMAIN} {
-	# Automatic HTTPS for real domains; self-signed for "localhost".
+	# tls internal
+
 	reverse_proxy app:8080 {
 		lb_policy round_robin
 	}

@@ -31,8 +31,11 @@ type Deps struct {
 	Categories *categoriesapi.Handlers
 	Push       *push.Handlers
 	AppBaseURL string
-	TrustProxy bool
-	WebDist    fs.FS // nil disables SPA serving (API-only dev mode)
+	// RequireHTTPS enables HSTS. Comes from config, which has already refused
+	// to boot on a non-loopback http base URL.
+	RequireHTTPS bool
+	TrustProxy   bool
+	WebDist      fs.FS // nil disables SPA serving (API-only dev mode)
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -43,7 +46,7 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(zapRequestLogger(d.Log))
 	r.Use(middleware.Recoverer)
-	r.Use(securityHeaders)
+	r.Use(securityHeaders(d.RequireHTTPS))
 	r.Use(middleware.Compress(5))
 	r.Use(httpx.MaxBytes(64 << 10))
 

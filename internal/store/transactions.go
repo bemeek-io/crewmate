@@ -277,6 +277,33 @@ func (s *Store) UncategorizedForMerchant(ctx context.Context, familyID uuid.UUID
 	return out, rows.Err()
 }
 
+// TransactionsInSeries lists the transactions that make up a recurring series.
+// It matches on the series' own definition (merchant + amount within its
+// tolerance) rather than the recurring_id link, so occurrences ingested before
+// the series existed are included too.
+func (s *Store) TransactionsInSeries(ctx context.Context, familyID uuid.UUID, merchantKey string, amountCents int64, tolerance int, limit int) ([]*Transaction, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE t.family_id = $1 AND t.merchant_key = $2 AND abs(t.amount_cents - $3) <= $4
+		ORDER BY t.occurred_at DESC LIMIT $5`,
+		familyID, merchantKey, amountCents, tolerance, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Transaction
+	for rows.Next() {
+		t, err := scanTxn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // TransactionsWithNote finds every transaction whose note matches a given
 // string — used to rewrite notes when a category is renamed.
 func (s *Store) TransactionsWithNote(ctx context.Context, familyID uuid.UUID, note string, limit int) ([]*Transaction, error) {

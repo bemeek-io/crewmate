@@ -123,7 +123,6 @@ export default function TransactionDetail() {
             disabled={c.id.startsWith("pending-")}
             onClick={() => setSelected(c.id)}
           >
-            {c.emoji ? `${c.emoji} ` : ""}
             {c.name}
           </button>
         ))}

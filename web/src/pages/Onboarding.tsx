@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { post, ApiError } from "../api/client";
+import { UsersIcon } from "../components/Icons";
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -47,7 +48,7 @@ export default function Onboarding() {
 
   return (
     <div className="center">
-      <div style={{ fontSize: "3rem" }}>👨‍👩‍👧‍👦</div>
+      <UsersIcon size={44} className="icon-muted" />
       <h1>Set up your crew</h1>
 
       {mode === "choose" && (

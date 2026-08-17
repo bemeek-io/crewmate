@@ -65,7 +65,6 @@ export default function Transactions() {
           <option value="">All categories</option>
           {(categories.data?.categories ?? []).map((c) => (
             <option key={c.id} value={c.id}>
-              {c.emoji ? `${c.emoji} ` : ""}
               {c.name}
             </option>
           ))}

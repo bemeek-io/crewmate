@@ -46,13 +46,30 @@ body {
 
 h1 {
   font-size: 1.5rem;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 h2 {
   font-size: 1.05rem;
   color: var(--muted);
   font-weight: 600;
-  margin: 20px 0 10px;
+  margin: 26px 0 14px;
+}
+
+/* Section header with a trailing action (e.g. "Recent activity … See all").
+   Owns the spacing so the heading never sits flush against the card below. */
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 26px 0 14px;
+}
+.section-header h2 {
+  margin: 0;
+}
+.section-header a {
+  font-size: 0.85rem;
+  text-decoration: none;
 }
 
 .card {
@@ -181,8 +198,9 @@ select:focus {
   gap: 3px;
 }
 .tabbar a .icon {
-  font-size: 1.35rem;
-  line-height: 1;
+  display: flex;
+  justify-content: center;
+  line-height: 0;
 }
 .tabbar a.active {
   color: var(--accent);
@@ -270,6 +288,46 @@ select:focus {
   background: var(--accent-dark);
 }
 
+/* Color swatch identifying a category (replaces emoji). */
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  display: inline-block;
+  background: var(--muted);
+}
+
+.color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.color-picker button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.color-picker button[aria-pressed="true"] {
+  border-color: var(--text);
+}
+
+/* Leading icon inside a card heading or empty state. */
+.icon-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.icon-muted {
+  color: var(--muted);
+}
+
 .pocket {
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
@@ -281,12 +339,16 @@ select:focus {
   height: 5px;
   background: var(--surface2);
   border-radius: 3px;
-  margin-top: 6px;
+  margin-top: 10px;
   overflow: hidden;
 }
 .goalbar > div {
   height: 100%;
   background: var(--accent);
+}
+/* Breathing room so the "% of goal" caption never touches the bar. */
+.goal-caption {
+  margin-top: 7px;
 }
 
 .banner {

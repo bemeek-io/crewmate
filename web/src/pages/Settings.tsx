@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { get, post, del } from "../api/client";
 import type { Me } from "../api/types";
 import { enablePush, needsInstallForPush, pushSupported } from "../push";
+import { BellIcon, ShareIcon } from "../components/Icons";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -60,7 +61,9 @@ export default function Settings() {
       <div className="card">
         {needsInstallForPush() ? (
           <>
-            <p style={{ fontWeight: 600, marginBottom: 6 }}>📲 Install Crewmate first</p>
+            <p className="icon-heading">
+              <ShareIcon size={18} className="icon-muted" /> Install Crewmate first
+            </p>
             <p className="muted small">
               On iPhone, notifications only work when Crewmate is installed as an app: open the{" "}
               <b>Share</b> menu in Safari, choose <b>Add to Home Screen</b>, then launch Crewmate
@@ -71,7 +74,9 @@ export default function Settings() {
           <p className="muted">This browser doesn’t support push notifications.</p>
         ) : perm === "granted" ? (
           <>
-            <p style={{ marginBottom: 10 }}>🔔 Notifications are on.</p>
+            <p className="icon-heading">
+              <BellIcon size={18} className="icon-muted" /> Notifications are on
+            </p>
             <button className="btn-secondary" onClick={onTest}>
               {testSent ? "Sent — check your notifications" : "Send test notification"}
             </button>

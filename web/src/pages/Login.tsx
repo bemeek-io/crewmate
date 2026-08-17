@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { post, ApiError } from "../api/client";
+import { CardIcon } from "../components/Icons";
 
 type Step = "phone" | "sms" | "email";
 
@@ -85,7 +86,7 @@ export default function Login() {
 
   return (
     <div className="center">
-      <div style={{ fontSize: "3rem" }}>💳</div>
+      <CardIcon size={44} className="icon-muted" />
       <h1>Crewmate</h1>
       <p className="muted">Sign in with your Crew account. Your credentials go straight to Crew — Crewmate never stores your phone number or codes.</p>
 

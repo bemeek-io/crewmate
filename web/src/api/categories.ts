@@ -42,13 +42,13 @@ const byName = (a: Category, b: Category) =>
   a.name.toLowerCase().localeCompare(b.name.toLowerCase());
 
 export function useCreateCategory() {
-  return useOptimistic<{ name: string; emoji?: string }>(
-    (v) => post<Category>("/api/categories", { name: v.name, emoji: v.emoji ?? "", color: "" }),
+  return useOptimistic<{ name: string; color?: string }>(
+    (v) => post<Category>("/api/categories", { name: v.name, color: v.color ?? "" }),
     (current, v) =>
       [
         ...current,
         // Temporary id; replaced when the server response lands.
-        { id: `pending-${v.name}`, name: v.name, emoji: v.emoji ?? "", color: "" },
+        { id: `pending-${v.name}`, name: v.name, color: v.color ?? "" },
       ].sort(byName),
     [["notes", "unmatched"], ["transactions"]]
   );
@@ -59,7 +59,6 @@ export function useRenameCategory() {
     (v) =>
       patch(`/api/categories/${v.category.id}`, {
         name: v.name,
-        emoji: v.category.emoji,
         color: v.category.color,
       }),
     (current, v) =>

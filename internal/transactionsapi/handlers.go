@@ -227,6 +227,49 @@ func (h *Handlers) ListRecurring(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"series": items})
 }
 
+// RecurringTransactions handles GET /api/recurring/{id}/transactions — the
+// occurrences behind a detected series, so the detection can be inspected.
+func (h *Handlers) RecurringTransactions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	famID := family.FamilyID(ctx)
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	s, err := h.Store.GetRecurringSeries(ctx, famID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		httpx.Error(w, http.StatusNotFound, "not_found", "series not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load series")
+		return
+	}
+	txns, err := h.Store.TransactionsInSeries(ctx, famID, s.MerchantKey, s.AmountCents, s.AmountTolerance, 100)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load transactions")
+		return
+	}
+	items := make([]map[string]any, 0, len(txns))
+	for _, t := range txns {
+		items = append(items, txnJSON(t))
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"series": map[string]any{
+			"id":               s.ID,
+			"merchant_key":     s.MerchantKey,
+			"amount_cents":     s.AmountCents,
+			"amount_tolerance": s.AmountTolerance,
+			"cadence":          s.Cadence,
+			"period_days":      s.PeriodDays,
+			"occurrence_count": s.OccurrenceCount,
+			"is_subscription":  s.IsSubscription,
+		},
+		"transactions": items,
+	})
+}
+
 // PatchRecurring handles PATCH /api/recurring/{id}: {dismissed: bool}
 func (h *Handlers) PatchRecurring(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

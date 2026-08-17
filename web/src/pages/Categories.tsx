@@ -10,14 +10,25 @@ import {
 } from "../api/categories";
 import type { Category, UnmatchedNote } from "../api/types";
 
-const EMOJI_SUGGESTIONS = ["🛒", "🍔", "⛽", "🏠", "🎬", "👕", "💊", "🎁", "✈️", "📱", "🐾", "🎓"];
+// A small, deliberately muted palette — categories are identified by a color
+// swatch rather than an emoji.
+const COLORS = [
+  "#4ade80",
+  "#38bdf8",
+  "#a78bfa",
+  "#f472b6",
+  "#fb923c",
+  "#facc15",
+  "#2dd4bf",
+  "#f87171",
+];
 
 /** True while a category exists only in the optimistic cache. */
 const isPending = (c: Category) => c.id.startsWith("pending-");
 
 export default function Categories() {
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("");
+  const [color, setColor] = useState(COLORS[0]);
   const [editing, setEditing] = useState<Category | null>(null);
   const [editName, setEditName] = useState("");
 
@@ -41,9 +52,8 @@ export default function Categories() {
     const trimmed = name.trim();
     if (!trimmed) return;
     // Optimistic: the row appears before the request resolves.
-    create.mutate({ name: trimmed, emoji });
+    create.mutate({ name: trimmed, color });
     setName("");
-    setEmoji("");
   }
 
   const notes = unmatched.data?.notes ?? [];
@@ -72,17 +82,16 @@ export default function Categories() {
               Add
             </button>
           </div>
-          <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 6 }}>
-            {EMOJI_SUGGESTIONS.map((e2) => (
+          <div className="color-picker">
+            {COLORS.map((c) => (
               <button
                 type="button"
-                key={e2}
-                className="btn-small btn-secondary"
-                style={{ width: "auto", opacity: emoji === e2 ? 1 : 0.6 }}
-                onClick={() => setEmoji(emoji === e2 ? "" : e2)}
-              >
-                {e2}
-              </button>
+                key={c}
+                aria-label={`Use color ${c}`}
+                aria-pressed={color === c}
+                style={{ background: c }}
+                onClick={() => setColor(c)}
+              />
             ))}
           </div>
           {create.isError && <div className="error">Could not add that category.</div>}
@@ -160,8 +169,11 @@ export default function Categories() {
             </div>
           ) : (
             <div className="row spread" style={{ padding: "10px 0" }} key={c.id}>
-              <span style={{ fontWeight: 600, opacity: isPending(c) ? 0.5 : 1 }}>
-                {c.emoji ? `${c.emoji} ` : ""}
+              <span
+                className="row"
+                style={{ fontWeight: 600, gap: 10, opacity: isPending(c) ? 0.5 : 1 }}
+              >
+                <span className="swatch" style={c.color ? { background: c.color } : undefined} />
                 {c.name}
               </span>
               <div className="row" style={{ gap: 6 }}>

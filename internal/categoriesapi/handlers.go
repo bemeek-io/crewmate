@@ -27,7 +27,7 @@ type Handlers struct {
 }
 
 func catJSON(c store.Category) map[string]any {
-	return map[string]any{"id": c.ID, "name": c.Name, "emoji": c.Emoji, "color": c.Color}
+	return map[string]any{"id": c.ID, "name": c.Name, "color": c.Color}
 }
 
 // List handles GET /api/categories.
@@ -44,13 +44,13 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"categories": out})
 }
 
-func validCategoryInput(w http.ResponseWriter, name, emoji, color string) bool {
+func validCategoryInput(w http.ResponseWriter, name, color string) bool {
 	if name == "" || len(name) > 40 {
 		httpx.Error(w, http.StatusBadRequest, "bad_request", "name must be 1-40 characters")
 		return false
 	}
-	if len(emoji) > 16 || len(color) > 16 {
-		httpx.Error(w, http.StatusBadRequest, "bad_request", "emoji/color too long")
+	if len(color) > 16 {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "color too long")
 		return false
 	}
 	return true
@@ -60,18 +60,17 @@ func validCategoryInput(w http.ResponseWriter, name, emoji, color string) bool {
 func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name  string `json:"name"`
-		Emoji string `json:"emoji"`
 		Color string `json:"color"`
 	}
 	if !httpx.Decode(w, r, &req) {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
-	if !validCategoryInput(w, req.Name, req.Emoji, req.Color) {
+	if !validCategoryInput(w, req.Name, req.Color) {
 		return
 	}
 	ctx := r.Context()
-	c, err := h.Store.CreateCategory(ctx, family.FamilyID(ctx), auth.UserID(ctx), req.Name, req.Emoji, req.Color)
+	c, err := h.Store.CreateCategory(ctx, family.FamilyID(ctx), auth.UserID(ctx), req.Name, req.Color)
 	if err != nil {
 		if store.IsUniqueViolation(err) {
 			httpx.Error(w, http.StatusConflict, "duplicate", "a category with that name already exists")
@@ -98,14 +97,13 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Name  string `json:"name"`
-		Emoji string `json:"emoji"`
 		Color string `json:"color"`
 	}
 	if !httpx.Decode(w, r, &req) {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
-	if !validCategoryInput(w, req.Name, req.Emoji, req.Color) {
+	if !validCategoryInput(w, req.Name, req.Color) {
 		return
 	}
 
@@ -119,7 +117,7 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.UpdateCategory(ctx, famID, id, req.Name, req.Emoji, req.Color); err != nil {
+	if err := h.Store.UpdateCategory(ctx, famID, id, req.Name, req.Color); err != nil {
 		if store.IsUniqueViolation(err) {
 			httpx.Error(w, http.StatusConflict, "duplicate", "a category with that name already exists")
 			return

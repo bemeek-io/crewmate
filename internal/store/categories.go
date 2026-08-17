@@ -15,14 +15,13 @@ type Category struct {
 	ID        uuid.UUID
 	FamilyID  uuid.UUID
 	Name      string
-	Emoji     string
 	Color     string
 	CreatedAt time.Time
 }
 
 func (s *Store) ListCategories(ctx context.Context, familyID uuid.UUID) ([]Category, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, family_id, name, emoji, color, created_at
+		SELECT id, family_id, name, color, created_at
 		FROM categories WHERE family_id = $1 ORDER BY lower(name)`, familyID)
 	if err != nil {
 		return nil, err
@@ -31,7 +30,7 @@ func (s *Store) ListCategories(ctx context.Context, familyID uuid.UUID) ([]Categ
 	var out []Category
 	for rows.Next() {
 		var c Category
-		if err := rows.Scan(&c.ID, &c.FamilyID, &c.Name, &c.Emoji, &c.Color, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.FamilyID, &c.Name, &c.Color, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -39,14 +38,14 @@ func (s *Store) ListCategories(ctx context.Context, familyID uuid.UUID) ([]Categ
 	return out, rows.Err()
 }
 
-func (s *Store) CreateCategory(ctx context.Context, familyID, createdBy uuid.UUID, name, emoji, color string) (*Category, error) {
+func (s *Store) CreateCategory(ctx context.Context, familyID, createdBy uuid.UUID, name, color string) (*Category, error) {
 	var c Category
 	err := s.Pool.QueryRow(ctx, `
-		INSERT INTO categories (family_id, name, emoji, color, created_by)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, family_id, name, emoji, color, created_at`,
-		familyID, name, emoji, color, createdBy,
-	).Scan(&c.ID, &c.FamilyID, &c.Name, &c.Emoji, &c.Color, &c.CreatedAt)
+		INSERT INTO categories (family_id, name, color, created_by)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, family_id, name, color, created_at`,
+		familyID, name, color, createdBy,
+	).Scan(&c.ID, &c.FamilyID, &c.Name, &c.Color, &c.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -56,9 +55,9 @@ func (s *Store) CreateCategory(ctx context.Context, familyID, createdBy uuid.UUI
 func (s *Store) GetCategory(ctx context.Context, familyID, id uuid.UUID) (*Category, error) {
 	var c Category
 	err := s.Pool.QueryRow(ctx, `
-		SELECT id, family_id, name, emoji, color, created_at
+		SELECT id, family_id, name, color, created_at
 		FROM categories WHERE id = $2 AND family_id = $1`, familyID, id,
-	).Scan(&c.ID, &c.FamilyID, &c.Name, &c.Emoji, &c.Color, &c.CreatedAt)
+	).Scan(&c.ID, &c.FamilyID, &c.Name, &c.Color, &c.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -68,10 +67,10 @@ func (s *Store) GetCategory(ctx context.Context, familyID, id uuid.UUID) (*Categ
 	return &c, nil
 }
 
-func (s *Store) UpdateCategory(ctx context.Context, familyID, id uuid.UUID, name, emoji, color string) error {
+func (s *Store) UpdateCategory(ctx context.Context, familyID, id uuid.UUID, name, color string) error {
 	tag, err := s.Pool.Exec(ctx, `
-		UPDATE categories SET name = $3, emoji = $4, color = $5
-		WHERE id = $2 AND family_id = $1`, familyID, id, name, emoji, color)
+		UPDATE categories SET name = $3, color = $4
+		WHERE id = $2 AND family_id = $1`, familyID, id, name, color)
 	if err != nil {
 		return err
 	}
@@ -98,9 +97,9 @@ func (s *Store) DeleteCategory(ctx context.Context, familyID, id uuid.UUID) erro
 func (s *Store) GetCategoryByName(ctx context.Context, familyID uuid.UUID, name string) (*Category, error) {
 	var c Category
 	err := s.Pool.QueryRow(ctx, `
-		SELECT id, family_id, name, emoji, color, created_at
+		SELECT id, family_id, name, color, created_at
 		FROM categories WHERE family_id = $1 AND lower(name) = lower($2)`, familyID, name,
-	).Scan(&c.ID, &c.FamilyID, &c.Name, &c.Emoji, &c.Color, &c.CreatedAt)
+	).Scan(&c.ID, &c.FamilyID, &c.Name, &c.Color, &c.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

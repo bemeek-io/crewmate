@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { get, fmtCents } from "../api/client";
-import type { MemberAccounts, Txn } from "../api/types";
+import type { Account, MemberAccounts, Txn } from "../api/types";
 import TxnRow from "../components/TxnRow";
+import { TagIcon, ChevronRightIcon } from "../components/Icons";
 
 function ago(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -10,6 +11,13 @@ function ago(iso: string): string {
   if (s < 3600) return `${Math.round(s / 60)}m ago`;
   return `${Math.round(s / 3600)}h ago`;
 }
+
+/**
+ * Crew reports linked outside accounts as EXTERNAL_SPEND / EXTERNAL_SAVE /
+ * EXTERNAL_OTHER. Those aren't Crew balances, so they're left off the home
+ * screen — their transactions still flow through Activity.
+ */
+const isExternal = (a: Account) => a.type?.toUpperCase().startsWith("EXTERNAL");
 
 export default function Dashboard() {
   const accounts = useQuery({
@@ -30,6 +38,9 @@ export default function Dashboard() {
 
   const members = accounts.data?.members ?? [];
   const uncatCount = uncategorized.data?.transactions?.length ?? 0;
+  const visible = members
+    .map((m) => ({ ...m, accounts: (m.accounts ?? []).filter((a) => !isExternal(a)) }))
+    .filter((m) => m.accounts.length > 0);
 
   return (
     <>
@@ -37,9 +48,13 @@ export default function Dashboard() {
 
       {uncatCount > 0 && (
         <Link to="/transactions?uncategorized=1" style={{ textDecoration: "none" }}>
-          <div className="banner">
-            🏷️ {uncatCount >= 20 ? "20+" : uncatCount} transaction{uncatCount === 1 ? "" : "s"} in
-            Misc — tap to categorize
+          <div className="banner row" style={{ gap: 10 }}>
+            <TagIcon size={18} />
+            <span className="grow">
+              {uncatCount >= 20 ? "20+" : uncatCount} transaction{uncatCount === 1 ? "" : "s"} in
+              Misc — tap to categorize
+            </span>
+            <ChevronRightIcon size={16} />
           </div>
         </Link>
       )}
@@ -50,7 +65,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {!accounts.isLoading && members.length === 0 && (
+      {!accounts.isLoading && visible.length === 0 && (
         <div className="card">
           <p className="muted">
             No balances yet. They appear within a minute of connecting a Crew account.
@@ -58,21 +73,18 @@ export default function Dashboard() {
         </div>
       )}
 
-      {members.map((m) => (
+      {visible.map((m) => (
         <section key={m.user_id}>
           <h2>
-            {m.first_name || "Member"} <span className="small muted">· updated {ago(m.fetched_at)}</span>
+            {m.first_name || "Member"}{" "}
+            <span className="small muted">· updated {ago(m.fetched_at)}</span>
           </h2>
-          {(m.accounts ?? []).map((a) => (
+          {m.accounts.map((a) => (
             <div className="card" key={a.id}>
-              <div className="row spread">
-                <div>
-                  <div className="muted small">{a.name || a.type}</div>
-                  <div className="balance-big">{fmtCents(a.overallBalance)}</div>
-                </div>
-              </div>
+              <div className="muted small">{a.name || a.type}</div>
+              <div className="balance-big">{fmtCents(a.overallBalance)}</div>
               {(a.subaccounts ?? []).length > 0 && (
-                <div style={{ marginTop: 8 }}>
+                <div style={{ marginTop: 10 }}>
                   {(a.subaccounts ?? []).map((p) => {
                     const pct =
                       p.goal && p.goal > 0
@@ -89,7 +101,7 @@ export default function Dashboard() {
                             <div className="goalbar">
                               <div style={{ width: `${pct}%` }} />
                             </div>
-                            <div className="muted small">
+                            <div className="muted small goal-caption">
                               {pct}% of {fmtCents(p.goal!)} goal
                             </div>
                           </>
@@ -104,11 +116,9 @@ export default function Dashboard() {
         </section>
       ))}
 
-      <div className="row spread" style={{ marginTop: 18 }}>
-        <h2 style={{ margin: 0 }}>Recent activity</h2>
-        <Link to="/transactions" className="small">
-          See all
-        </Link>
+      <div className="section-header">
+        <h2>Recent activity</h2>
+        <Link to="/transactions">See all</Link>
       </div>
       <div className="card">
         {(recent.data?.transactions ?? []).map((t) => (

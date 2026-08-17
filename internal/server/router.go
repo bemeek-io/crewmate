@@ -105,6 +105,7 @@ func NewRouter(d Deps) http.Handler {
 			fr.Delete("/notes/ignore", d.Categories.Unignore)
 
 			fr.Get("/recurring", d.Txns.ListRecurring)
+			fr.Get("/recurring/{id}/transactions", d.Txns.RecurringTransactions)
 			fr.Patch("/recurring/{id}", d.Txns.PatchRecurring)
 		})
 	})

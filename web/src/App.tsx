@@ -4,6 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { get } from "./api/client";
 import type { Me } from "./api/types";
 import { syncPushSubscription } from "./push";
+import {
+  HomeIcon,
+  ActivityIcon,
+  TagIcon,
+  RepeatIcon,
+  SettingsIcon,
+} from "./components/Icons";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
@@ -15,19 +22,21 @@ import Family from "./pages/Family";
 import Settings from "./pages/Settings";
 
 function TabBar() {
-  const tab = (to: string, icon: string, label: string) => (
+  const tab = (to: string, Icon: (p: { size?: number }) => JSX.Element, label: string) => (
     <NavLink to={to} className={({ isActive }) => (isActive ? "active" : "")}>
-      <span className="icon">{icon}</span>
+      <span className="icon">
+        <Icon size={21} />
+      </span>
       {label}
     </NavLink>
   );
   return (
     <nav className="tabbar">
-      {tab("/", "🏠", "Home")}
-      {tab("/transactions", "🧾", "Activity")}
-      {tab("/categories", "🏷️", "Categories")}
-      {tab("/recurring", "🔁", "Recurring")}
-      {tab("/settings", "⚙️", "Settings")}
+      {tab("/", HomeIcon, "Home")}
+      {tab("/transactions", ActivityIcon, "Activity")}
+      {tab("/categories", TagIcon, "Categories")}
+      {tab("/recurring", RepeatIcon, "Recurring")}
+      {tab("/settings", SettingsIcon, "Settings")}
     </nav>
   );
 }

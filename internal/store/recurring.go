@@ -98,6 +98,24 @@ func (s *Store) ListRecurringSeries(ctx context.Context, familyID uuid.UUID) ([]
 	return out, rows.Err()
 }
 
+// GetRecurringSeries loads one series, family-scoped.
+func (s *Store) GetRecurringSeries(ctx context.Context, familyID, id uuid.UUID) (*RecurringSeries, error) {
+	var r RecurringSeries
+	err := s.Pool.QueryRow(ctx, `
+		SELECT id, family_id, merchant_key, amount_cents, amount_tolerance, cadence, period_days,
+		       first_seen_at, last_seen_at, occurrence_count, is_subscription, dismissed
+		FROM recurring_series WHERE id = $2 AND family_id = $1`, familyID, id,
+	).Scan(&r.ID, &r.FamilyID, &r.MerchantKey, &r.AmountCents, &r.AmountTolerance, &r.Cadence,
+		&r.PeriodDays, &r.FirstSeenAt, &r.LastSeenAt, &r.OccurrenceCount, &r.IsSubscription, &r.Dismissed)
+	if err == pgx.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 func (s *Store) SetRecurringDismissed(ctx context.Context, familyID, id uuid.UUID, dismissed bool) error {
 	tag, err := s.Pool.Exec(ctx, `
 		UPDATE recurring_series

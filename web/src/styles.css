@@ -402,12 +402,12 @@ select:focus {
 /* A pocket a card can be moved into while relocating one. */
 /* Every pocket but the card's current one is a move target, so the affordance
    stays quiet — a dashed outline on all of them reads as an error state. */
+/* Only the press affordance — deliberately no margin or padding. Every pocket
+   but the card's current one is a move target, so any geometry here would size
+   those rows differently and leave the active pocket looking inset. */
 .pocket-target {
   cursor: pointer;
   border-radius: 10px;
-  margin: 0 -8px;
-  padding-left: 8px;
-  padding-right: 8px;
   -webkit-tap-highlight-color: transparent;
 }
 .pocket-target:active {

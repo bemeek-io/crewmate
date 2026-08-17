@@ -9,6 +9,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"go.uber.org/zap"
+
+	"github.com/bemeek-io/crewmate/internal/store"
 )
 
 // LLM categorizes unrecognized merchants with Claude Haiku using structured
@@ -189,4 +191,22 @@ Use "high" confidence only when the merchant obviously belongs to the category.`
 		return "", false
 	}
 	return res.Category, true
+}
+
+// LLMSelectable returns the category names the model is allowed to choose from.
+//
+// System categories (Subscription, Loan Payment) are excluded: they carry
+// built-in behaviour and are applied deliberately — by labelling a recurring
+// series, which also records a rule so later charges match silently. Letting
+// the model guess them would label one-off purchases as subscriptions and
+// undercut the feature they belong to.
+func LLMSelectable(cats []store.Category) []string {
+	names := make([]string, 0, len(cats))
+	for _, c := range cats {
+		if c.SystemKey != nil {
+			continue
+		}
+		names = append(names, c.Name)
+	}
+	return names
 }

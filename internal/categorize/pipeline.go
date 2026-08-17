@@ -168,9 +168,9 @@ func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) ou
 	if err != nil || len(cats) == 0 {
 		return outcome{}
 	}
-	names := make([]string, len(cats))
-	for i, c := range cats {
-		names[i] = c.Name
+	names := LLMSelectable(cats)
+	if len(names) == 0 {
+		return outcome{}
 	}
 	name, ok := p.LLM.Categorize(ctx, t.Payee, t.MCC, t.AmountCents, names)
 	if !ok {
@@ -179,6 +179,13 @@ func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) ou
 	// Normalize to the family's exact spelling so the note matches on read.
 	cat, err := p.Store.GetCategoryByName(ctx, t.FamilyID, name)
 	if err != nil || cat == nil {
+		return outcome{}
+	}
+	// Belt and braces: the model is only offered non-system names, but a system
+	// category must never arrive this way even if it answers with one.
+	if cat.SystemKey != nil {
+		p.Log.Warn("llm proposed a system category; ignoring",
+			zap.String("category", cat.Name), zap.String("merchant", t.Payee))
 		return outcome{}
 	}
 	p.queueNote(ctx, t, cat.Name, "llm")

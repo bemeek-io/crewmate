@@ -4,10 +4,12 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/google/uuid"
@@ -124,6 +126,15 @@ func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, paylo
 			zap.Int("status", resp.StatusCode), zap.String("host", host),
 			zap.String("body", detail))
 		detail = host + ": " + detail
+		// A VAPID token carries an absolute expiry, so a wrong clock on this
+		// host produces a perfectly-formed token the gateway still refuses —
+		// Apple calls that BadJwtToken, which reads like a signing bug. The
+		// response's Date header is the gateway's own clock, so the skew can
+		// be stated instead of guessed at.
+		if skew, ok := clockSkew(resp.Header.Get("Date")); ok {
+			detail += fmt.Sprintf(" [this server's clock is %s %s than %s — fix the host's time sync]",
+				skew.Round(time.Second), aheadOrBehind(skew), host)
+		}
 	}
 	switch resp.StatusCode {
 	case http.StatusNotFound, http.StatusGone:
@@ -135,4 +146,30 @@ func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, paylo
 		}
 	}
 	return SendResult{Status: resp.StatusCode, Err: detail}
+}
+
+// clockSkew compares this host's clock to a gateway's Date header, reporting
+// only a difference big enough to matter. Returns false when the header is
+// missing, unparseable, or the clocks agree.
+func clockSkew(dateHeader string) (time.Duration, bool) {
+	if dateHeader == "" {
+		return 0, false
+	}
+	remote, err := http.ParseTime(dateHeader)
+	if err != nil {
+		return 0, false
+	}
+	// Date has one-second resolution, so anything under a minute is noise.
+	skew := time.Since(remote)
+	if skew > -time.Minute && skew < time.Minute {
+		return 0, false
+	}
+	return skew, true
+}
+
+func aheadOrBehind(skew time.Duration) string {
+	if skew < 0 {
+		return "behind"
+	}
+	return "ahead of"
 }

@@ -12,6 +12,7 @@ interface Draft {
   max: string;
   direction: Direction;
   priority: string;
+  apply_to_existing: boolean;
 }
 
 const emptyDraft = (categoryID = ""): Draft => ({
@@ -22,6 +23,7 @@ const emptyDraft = (categoryID = ""): Draft => ({
   max: "",
   direction: "spend",
   priority: "100",
+  apply_to_existing: false,
 });
 
 /** Dollars in the form, cents on the wire. */
@@ -80,6 +82,7 @@ export default function Rules() {
         max_amount_cents: toCents(d.max),
         direction: d.direction,
         priority: Number(d.priority) || 100,
+        apply_to_existing: d.apply_to_existing,
       }),
     onSuccess: () => {
       setDraft(null);
@@ -192,6 +195,18 @@ export default function Rules() {
                 </option>
               ))}
             </select>
+
+            {/* Fills in transactions that were never categorized; it can't
+                overwrite a category already chosen. */}
+            <label className="row" style={{ margin: "14px 0", gap: 10 }}>
+              <input
+                type="checkbox"
+                style={{ width: "auto", margin: 0 }}
+                checked={draft.apply_to_existing}
+                onChange={(e) => setDraft({ ...draft, apply_to_existing: e.target.checked })}
+              />
+              <span className="small">Also apply to past uncategorized transactions</span>
+            </label>
 
             {error && <div className="error">{error}</div>}
             <div className="row" style={{ gap: 8 }}>

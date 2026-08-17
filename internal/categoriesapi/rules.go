@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/bemeek-io/crewmate/internal/family"
 	"github.com/bemeek-io/crewmate/internal/httpx"
@@ -55,6 +56,9 @@ type ruleBody struct {
 	MaxAmountCents *int64    `json:"max_amount_cents"`
 	Direction      string    `json:"direction"`
 	Enabled        *bool     `json:"enabled"`
+	// ApplyToExisting backfills the rule over past transactions that were
+	// never categorized. Create-only.
+	ApplyToExisting bool `json:"apply_to_existing"`
 }
 
 // toInput validates and normalizes a rule body.
@@ -133,7 +137,16 @@ func (h *Handlers) CreateRule(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not create rule")
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, ruleJSON(*rule))
+	out := ruleJSON(*rule)
+	if b.ApplyToExisting && h.Pipeline != nil {
+		n, err := h.Pipeline.ApplyRuleToHistory(r.Context(), family.FamilyID(r.Context()), *rule)
+		if err != nil {
+			// The rule itself is created; report that rather than failing it.
+			h.Log.Warn("apply rule to history", zap.Error(err))
+		}
+		out["backfilling"] = n
+	}
+	httpx.JSON(w, http.StatusCreated, out)
 }
 
 // UpdateRule handles PATCH /api/rules/{id}.

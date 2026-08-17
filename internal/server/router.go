@@ -100,6 +100,8 @@ func NewRouter(d Deps) http.Handler {
 			fr.Patch("/categories/{id}", d.Categories.Update)
 			fr.Delete("/categories/{id}", d.Categories.Delete)
 
+			fr.Post("/categorize/reassess", d.Categories.Reassess)
+
 			fr.Get("/rules", d.Categories.ListRules)
 			fr.Post("/rules", d.Categories.CreateRule)
 			fr.Patch("/rules/{id}", d.Categories.UpdateRule)

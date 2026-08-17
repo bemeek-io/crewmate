@@ -1,7 +1,16 @@
 import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { get } from "../api/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { get, post, ApiError } from "../api/client";
+
+// Windows offered for a re-assessment, matching the cash flow report.
+const REASSESS_RANGES = [
+  { key: "1w", label: "1W" },
+  { key: "1m", label: "1M" },
+  { key: "3m", label: "3M" },
+  { key: "6m", label: "6M" },
+  { key: "1y", label: "1Y" },
+];
 import {
   useCreateCategory,
   useUpdateCategory,
@@ -56,6 +65,8 @@ export default function Categories() {
   const [editing, setEditing] = useState<Category | null>(null);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState("");
+  const [reassessResult, setReassessResult] = useState("");
+  const qc = useQueryClient();
 
   const categories = useQuery({
     queryKey: ["categories"],
@@ -94,6 +105,25 @@ export default function Categories() {
 
   const notes = unmatched.data?.notes ?? [];
   const ignored = unmatched.data?.ignored ?? [];
+
+  const reassess = useMutation({
+    mutationFn: (range: string) =>
+      post<{ queued: number }>("/api/categorize/reassess", { range }),
+    onSuccess: (res) => {
+      if (!res.queued) {
+        setReassessResult("Nothing uncategorized in that window.");
+        return;
+      }
+      setReassessResult(
+        `Re-assessing ${res.queued} transaction${res.queued === 1 ? "" : "s"} in the background. ` +
+          `Categories appear in Activity as they're written back to Crew.`
+      );
+      // The work is asynchronous, so refresh once it's had time to land.
+      setTimeout(() => qc.invalidateQueries({ queryKey: ["transactions"] }), 15_000);
+    },
+    onError: (e) =>
+      setReassessResult(e instanceof ApiError ? e.message : "Could not start the re-assessment"),
+  });
 
   return (
     <>
@@ -266,6 +296,38 @@ export default function Categories() {
           </div>
         </>
       )}
+
+      <h2>Re-assess uncategorized</h2>
+      <div className="card">
+        <p className="muted small" style={{ marginBottom: 10 }}>
+          Adding a category doesn’t reach spending you’ve already had. This runs the
+          categorizer back over transactions in Misc so new categories catch up. It only fills
+          in blanks — categories you or a rule already set, including Subscription and Loan
+          Payment, are left alone.
+        </p>
+        <div className="chips" style={{ margin: 0 }}>
+          {REASSESS_RANGES.map((r) => (
+            <button
+              key={r.key}
+              className="chip"
+              disabled={reassess.isPending}
+              onClick={() => reassess.mutate(r.key)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        {reassess.isPending && (
+          <p className="muted small" style={{ marginTop: 10 }}>
+            Starting…
+          </p>
+        )}
+        {reassessResult && (
+          <p className="muted small" style={{ marginTop: 10 }}>
+            {reassessResult}
+          </p>
+        )}
+      </div>
     </>
   );
 }

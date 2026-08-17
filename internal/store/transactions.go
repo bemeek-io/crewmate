@@ -394,3 +394,30 @@ func (s *Store) MerchantOccurrences(ctx context.Context, familyID uuid.UUID, mer
 	}
 	return out, rows.Err()
 }
+
+// ListUncategorizedSince returns transactions in the window carrying no note at
+// all, newest first.
+//
+// An empty note is the only safe target for a bulk re-assessment: a note that
+// names a category is already the answer — from a rule, a series label, or a
+// person — and a note that names nothing is something a human typed. Neither
+// should be rewritten in bulk, especially since the note lives in Crew where
+// they can see it.
+func (s *Store) ListUncategorizedSince(ctx context.Context, familyID uuid.UUID, since time.Time, limit int) ([]*Transaction, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE t.family_id = $1 AND t.note = '' AND t.occurred_at >= $2
+		ORDER BY t.occurred_at DESC LIMIT $3`, familyID, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Transaction
+	for rows.Next() {
+		t, err := scanTxn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/crewmate/internal/auth"
+	"github.com/bemeek-io/crewmate/internal/categorize"
 	"github.com/bemeek-io/crewmate/internal/family"
 	"github.com/bemeek-io/crewmate/internal/httpx"
 	"github.com/bemeek-io/crewmate/internal/store"
@@ -24,6 +25,9 @@ const renameLimit = 500
 type Handlers struct {
 	Store *store.Store
 	Log   *zap.Logger
+	// Pipeline backfills categories over past transactions. Optional: nil
+	// simply means those endpoints report nothing to do.
+	Pipeline *categorize.Pipeline
 }
 
 func catJSON(c store.Category) map[string]any {

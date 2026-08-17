@@ -147,7 +147,7 @@ func run() error {
 	familyH := &family.Handlers{Store: st, Log: log}
 	crewH := &crewlink.Handlers{Store: st, Log: log}
 	txnsH := &transactionsapi.Handlers{Store: st, Log: log}
-	catsH := &categoriesapi.Handlers{Store: st, Log: log}
+	catsH := &categoriesapi.Handlers{Store: st, Log: log, Pipeline: pipeline}
 	pushH := &push.Handlers{Service: pushSvc}
 
 	dist, err := web.Dist()

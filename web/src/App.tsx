@@ -12,7 +12,6 @@ import {
   SettingsIcon,
   MenuIcon,
   SlidersIcon,
-  UsersIcon,
   ChevronRightIcon,
   ChartIcon,
 } from "./components/Icons";
@@ -24,7 +23,6 @@ import Categories from "./pages/Categories";
 import Rules from "./pages/Rules";
 import Recurring from "./pages/Recurring";
 import CashFlow from "./pages/CashFlow";
-import Family from "./pages/Family";
 import Settings from "./pages/Settings";
 
 /** Everything that doesn't earn a permanent tab slot. */
@@ -32,7 +30,6 @@ const MENU_ITEMS = [
   { to: "/cashflow", Icon: ChartIcon, label: "Cash flow" },
   { to: "/categories", Icon: TagIcon, label: "Categories" },
   { to: "/rules", Icon: SlidersIcon, label: "Rules" },
-  { to: "/family", Icon: UsersIcon, label: "Family" },
   { to: "/settings", Icon: SettingsIcon, label: "Settings" },
 ];
 
@@ -157,7 +154,6 @@ export default function App() {
           <Route path="/rules" element={<Rules />} />
           <Route path="/recurring" element={<Recurring />} />
           <Route path="/cashflow" element={<CashFlow />} />
-          <Route path="/family" element={<Family />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

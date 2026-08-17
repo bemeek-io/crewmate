@@ -76,8 +76,6 @@ func NewRouter(d Deps) http.Handler {
 			pr.Get("/me", d.Crew.Me)
 			pr.Get("/crew/status", d.Crew.Status)
 			pr.Delete("/crew/connection", d.Crew.Disconnect)
-			pr.Post("/family", d.Family.Create)
-			pr.Post("/family/join", d.Family.Join)
 			pr.Get("/push/vapid-public-key", d.Push.VAPIDPublicKey)
 			pr.Post("/push/subscriptions", d.Push.Subscribe)
 			pr.Delete("/push/subscriptions", d.Push.Unsubscribe)
@@ -88,9 +86,6 @@ func NewRouter(d Deps) http.Handler {
 		api.Group(func(fr chi.Router) {
 			fr.Use(d.Sessions.RequireSession)
 			fr.Use(d.Family.RequireMembership)
-			fr.Get("/family", d.Family.Get)
-			fr.With(d.Family.RequireAdmin).Post("/family/invites", d.Family.CreateInvite)
-			fr.With(d.Family.RequireAdmin).Delete("/family/members/{userID}", d.Family.RemoveMember)
 
 			fr.Get("/accounts", d.Crew.Accounts)
 			fr.Put("/cards/{cardID}/pocket", d.Crew.MoveCardPocket)

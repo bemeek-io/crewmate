@@ -36,9 +36,11 @@ export default function Login() {
     }
   }
 
-  async function finishLogin(res: { has_family?: boolean }) {
+  // The household is established server-side during sign-in, so there is
+  // nowhere to send anyone but home.
+  async function finishLogin() {
     await qc.invalidateQueries();
-    navigate(res.has_family ? "/" : "/onboarding", { replace: true });
+    navigate("/", { replace: true });
   }
 
   async function submitSMS(e: FormEvent) {
@@ -49,14 +51,13 @@ export default function Login() {
       const res = await post<{
         needs_email?: boolean;
         email_masked?: string;
-        has_family?: boolean;
       }>("/api/auth/sms/verify", { login_id: loginID, code: code.trim() });
       if (res.needs_email) {
         setEmailMasked(res.email_masked ?? "");
         setCode("");
         setStep("email");
       } else {
-        await finishLogin(res);
+        await finishLogin();
       }
     } catch (err) {
       fail(err);
@@ -71,11 +72,11 @@ export default function Login() {
     setBusy(true);
     setError("");
     try {
-      const res = await post<{ has_family?: boolean }>("/api/auth/email/verify", {
+      await post("/api/auth/email/verify", {
         login_id: loginID,
         code: code.trim(),
       });
-      await finishLogin(res);
+      await finishLogin();
     } catch (err) {
       fail(err);
       if (err instanceof ApiError && err.code === "login_expired") setStep("phone");

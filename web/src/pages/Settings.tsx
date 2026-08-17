@@ -124,13 +124,6 @@ export default function Settings() {
         )}
       </div>
 
-      <h2>Family</h2>
-      <div className="card">
-        <Link to="/family">
-          <button className="btn-secondary">Manage family & invites</button>
-        </Link>
-      </div>
-
       <div className="card">
         <button className="btn-danger" onClick={onLogout}>
           Sign out

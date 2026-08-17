@@ -87,7 +87,24 @@ func (s *Store) ensureFamilyOnce(ctx context.Context, userID uuid.UUID, crewFami
 	var existing uuid.UUID
 	err = tx.QueryRow(ctx, `SELECT family_id FROM family_members WHERE user_id = $1`, userID).Scan(&existing)
 	if err == nil {
-		return existing, nil // already placed
+		// Already placed — but a family created before the Crew link existed
+		// carries no household ID, so nobody else from that household would
+		// ever join it. Adopt the ID now, which makes the next member land
+		// here instead of in a family of their own. The partial unique index
+		// keeps this from stealing a household another family already claims.
+		if crewFamilyID != "" {
+			if _, err := tx.Exec(ctx, `
+				UPDATE families SET crew_family_id = $2
+				WHERE id = $1 AND crew_family_id IS NULL
+				  AND NOT EXISTS (SELECT 1 FROM families WHERE crew_family_id = $2)`,
+				existing, crewFamilyID); err != nil {
+				return uuid.Nil, err
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return uuid.Nil, err
+			}
+		}
+		return existing, nil
 	}
 	if err != pgx.ErrNoRows {
 		return uuid.Nil, err

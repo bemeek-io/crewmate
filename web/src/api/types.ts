@@ -2,7 +2,6 @@ export interface Me {
   user: { id: string; first_name: string; last_name: string };
   crew_status: "none" | "active" | "needs_relogin" | "disabled";
   family_id?: string;
-  role?: "admin" | "member";
 }
 
 export interface Subaccount {

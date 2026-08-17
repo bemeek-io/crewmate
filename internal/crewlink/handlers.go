@@ -56,8 +56,9 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 		out["crew_status"] = string(conn.Status)
 	}
 	if m != nil {
+		// The household is identity, not something the client can act on —
+		// there is no role-gated screen left, so the role isn't published.
 		out["family_id"] = m.FamilyID
-		out["role"] = m.Role
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }

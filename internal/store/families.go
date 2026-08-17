@@ -96,6 +96,11 @@ func (s *Store) CreateFamily(ctx context.Context, name string, creator uuid.UUID
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	// Seed the categories crewmate owns so a new family can label a
+	// subscription immediately.
+	if err := s.EnsureSystemCategories(ctx, f.ID); err != nil {
+		return nil, err
+	}
 	return &f, nil
 }
 

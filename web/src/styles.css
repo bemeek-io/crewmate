@@ -294,6 +294,18 @@ select:focus {
   background: var(--accent-dark);
 }
 
+/* Form field caption inside the rule builder. */
+.field-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+.field-label:first-child {
+  margin-top: 0;
+}
+
 /* Whole-row tap target for editing a category. */
 .category-row {
   width: 100%;

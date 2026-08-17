@@ -81,7 +81,9 @@ export default function Dashboard() {
           </h2>
           {m.accounts.map((a) => (
             <div className="card" key={a.id}>
-              <div className="muted small">{a.name || a.type}</div>
+              {/* Only a real account name is worth showing; the raw Crew type
+                  (SPEND/SAVE) is noise. */}
+              {a.name && <div className="muted small">{a.name}</div>}
               <div className="balance-big">{fmtCents(a.overallBalance)}</div>
               {(a.subaccounts ?? []).length > 0 && (
                 <div style={{ marginTop: 10 }}>

@@ -87,6 +87,15 @@ func (p *Pipeline) sweepLoop(ctx context.Context) {
 	}
 }
 
+// outcome records how a transaction got its category, which decides whether a
+// push is worth sending.
+type outcome struct {
+	category string
+	// silent is set when a rule decided the category. A rule match is an
+	// outcome the family already asked for, so there's nothing to review.
+	silent bool
+}
+
 func (p *Pipeline) process(ctx context.Context, item Item) {
 	t, err := p.Store.GetTransactionByID(ctx, item.TxnID)
 	if err != nil {
@@ -94,7 +103,7 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 		return
 	}
 
-	assigned := p.resolveCategory(ctx, t)
+	res := p.resolveCategory(ctx, t)
 
 	// Recurring / subscription detection (spends only).
 	if t.MerchantKey != "" {
@@ -105,8 +114,10 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 		}
 	}
 
-	// Push, exactly once across all replicas.
-	if !item.Notify || time.Since(t.OccurredAt) > notifyWindow {
+	// Push, exactly once across all replicas. A rule-assigned category is
+	// deliberately silent; an LLM guess or an unrecognized merchant is not,
+	// since both are things the family may want to correct.
+	if !item.Notify || res.silent || time.Since(t.OccurredAt) > notifyWindow {
 		_, _ = p.Store.ClaimNotification(ctx, t.ID) // absorb silently
 		return
 	}
@@ -114,22 +125,31 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 	if err != nil || !claimed {
 		return
 	}
-	p.Push.SendToFamily(ctx, t.FamilyID, buildNotification(t, assigned))
+	p.Push.SendToFamily(ctx, t.FamilyID, buildNotification(t, res.category))
 }
 
 // resolveCategory decides this transaction's category and queues the note
-// write when one is needed. It returns the category name now in effect, or ""
-// when the transaction still needs a human.
+// write when one is needed.
 //
-// A note that already holds something is never overwritten automatically: it
-// is either a category the user (or the Crew app) already set, or a genuine
-// hand-written annotation that must not be destroyed.
-func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) string {
+// Order of precedence:
+//  1. a category (or hand-written note) already in Crew — never overwritten
+//  2. the family's rules, including labels applied to a recurring series
+//  3. what this merchant was categorized as last time
+//  4. the LLM
+//
+// Rules deliberately run ahead of the LLM: they're free, deterministic, and
+// they're the family telling us the answer.
+func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) outcome {
 	if t.CategoryName != nil {
-		return *t.CategoryName // already categorized in Crew
+		return outcome{category: *t.CategoryName, silent: true} // already set in Crew
 	}
 	if t.Note != "" {
-		return "" // user's own note — leave it alone, ask them to categorize
+		return outcome{} // user's own note — leave it, ask them to categorize
+	}
+
+	if cat, ok := p.applyRules(ctx, t); ok {
+		p.queueNote(ctx, t, cat, "rule")
+		return outcome{category: cat, silent: true}
 	}
 
 	// Prior transactions for this merchant are the merchant→category cache;
@@ -138,15 +158,15 @@ func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) st
 		p.Log.Warn("merchant suggestion", zap.Error(err))
 	} else if ok {
 		p.queueNote(ctx, t, name, "history")
-		return name
+		return outcome{category: name}
 	}
 
 	if !p.LLM.Enabled {
-		return ""
+		return outcome{}
 	}
 	cats, err := p.Store.ListCategories(ctx, t.FamilyID)
 	if err != nil || len(cats) == 0 {
-		return ""
+		return outcome{}
 	}
 	names := make([]string, len(cats))
 	for i, c := range cats {
@@ -154,15 +174,34 @@ func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) st
 	}
 	name, ok := p.LLM.Categorize(ctx, t.Payee, t.MCC, t.AmountCents, names)
 	if !ok {
-		return ""
+		return outcome{}
 	}
 	// Normalize to the family's exact spelling so the note matches on read.
 	cat, err := p.Store.GetCategoryByName(ctx, t.FamilyID, name)
 	if err != nil || cat == nil {
-		return ""
+		return outcome{}
 	}
 	p.queueNote(ctx, t, cat.Name, "llm")
-	return cat.Name
+	return outcome{category: cat.Name}
+}
+
+// applyRules evaluates the family's rules in priority order.
+func (p *Pipeline) applyRules(ctx context.Context, t *store.Transaction) (string, bool) {
+	rules, err := p.Store.ListEnabledRules(ctx, t.FamilyID)
+	if err != nil {
+		p.Log.Warn("load rules", zap.Error(err))
+		return "", false
+	}
+	m := FirstMatch(rules, Candidate{
+		Payee:       t.Payee,
+		MerchantKey: t.MerchantKey,
+		MCC:         t.MCC,
+		AmountCents: t.AmountCents,
+	})
+	if m == nil {
+		return "", false
+	}
+	return m.CategoryName, true
 }
 
 func (p *Pipeline) queueNote(ctx context.Context, t *store.Transaction, note, source string) {

@@ -1,9 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { get, patch, fmtCents } from "../api/client";
+import { get, patch, put, fmtCents } from "../api/client";
 import type { RecurringSeries, Txn } from "../api/types";
 import { ChevronRightIcon, ChevronDownIcon } from "../components/Icons";
+
+// Crewmate's built-in labels. Applying one creates a rule for the merchant.
+const LABELS = [
+  { key: "subscription", name: "Subscription" },
+  { key: "loan_payment", name: "Loan Payment" },
+];
 
 interface SeriesResponse {
   series: RecurringSeries;
@@ -85,6 +91,17 @@ export default function Recurring() {
       patch(`/api/recurring/${id}`, { dismissed }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["recurring"] }),
   });
+  // Labeling records a rule for the merchant, so future charges are
+  // categorized automatically and without a notification.
+  const label = useMutation({
+    mutationFn: ({ id, key }: { id: string; key: string | null }) =>
+      put(`/api/recurring/${id}/label`, { system_key: key }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recurring"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
 
   const items = series.data?.series ?? [];
   const subs = items.filter((s) => s.kind === "subscription" && !s.dismissed);
@@ -118,6 +135,24 @@ export default function Recurring() {
           >
             {s.dismissed ? "Restore" : "Dismiss"}
           </button>
+        </div>
+        <div className="chips" style={{ margin: "0 0 10px 26px" }}>
+          {LABELS.map((l) => (
+            <button
+              key={l.key}
+              className={`chip ${s.label_system_key === l.key ? "on" : ""}`}
+              onClick={() =>
+                label.mutate({ id: s.id, key: s.label_system_key === l.key ? null : l.key })
+              }
+            >
+              {l.name}
+            </button>
+          ))}
+          {s.label_system_key && (
+            <span className="muted small" style={{ alignSelf: "center" }}>
+              future charges categorized automatically
+            </span>
+          )}
         </div>
         {expanded && <SeriesDetail id={s.id} />}
       </div>

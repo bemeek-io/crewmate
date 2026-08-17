@@ -48,7 +48,13 @@ export function useCreateCategory() {
       [
         ...current,
         // Temporary id; replaced when the server response lands.
-        { id: `pending-${v.name}`, name: v.name, color: v.color ?? "" },
+        {
+          id: `pending-${v.name}`,
+          name: v.name,
+          color: v.color ?? "",
+          system: false,
+          system_key: null,
+        } satisfies Category,
       ].sort(byName),
     [["notes", "unmatched"], ["transactions"]]
   );

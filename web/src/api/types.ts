@@ -61,6 +61,28 @@ export interface Category {
   id: string;
   name: string;
   color: string;
+  /** Built-in categories can be recolored but not renamed or deleted. */
+  system: boolean;
+  system_key: string | null;
+}
+
+export type MatchType = "contains" | "equals" | "prefix";
+export type Direction = "any" | "spend" | "income";
+
+export interface CategoryRule {
+  id: string;
+  category_id: string;
+  category_name: string;
+  category_color: string;
+  priority: number;
+  payee_match: string;
+  match_type: MatchType;
+  mcc: string;
+  min_amount_cents: number | null;
+  max_amount_cents: number | null;
+  direction: Direction;
+  enabled: boolean;
+  source: "user" | "series";
 }
 
 export interface RecurringSeries {
@@ -82,6 +104,9 @@ export interface RecurringSeries {
   last_seen_at: string;
   occurrence_count: number;
   dismissed: boolean;
+  /** Set when the merchant has been labeled Subscription / Loan Payment. */
+  label_system_key: string | null;
+  label_name: string | null;
 }
 
 export interface UnmatchedNote {

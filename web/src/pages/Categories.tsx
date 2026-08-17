@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { get } from "../api/client";
 import {
@@ -160,17 +161,26 @@ export default function Categories() {
         </>
       )}
 
-      <h2>Your categories</h2>
+      <div className="section-header">
+        <h2>Your categories</h2>
+        <Link to="/rules">Rules</Link>
+      </div>
       <div className="card">
         {(categories.data?.categories ?? []).map((c) =>
           editing?.id === c.id ? (
             <div style={{ padding: "12px 0" }} key={c.id}>
-              <input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                maxLength={40}
-                autoFocus
-              />
+              {c.system ? (
+                <p className="muted small" style={{ marginBottom: 10 }}>
+                  <b>{c.name}</b> is built in — it can be recolored, but not renamed or deleted.
+                </p>
+              ) : (
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  maxLength={40}
+                  autoFocus
+                />
+              )}
               <ColorPicker value={editColor} onChange={setEditColor} />
               <div className="row" style={{ gap: 8, marginTop: 12 }}>
                 <button
@@ -189,6 +199,7 @@ export default function Categories() {
                   Cancel
                 </button>
                 <span className="grow" />
+                {!c.system && (
                 <button
                   className="btn-small btn-danger"
                   style={{ width: "auto" }}
@@ -205,6 +216,7 @@ export default function Categories() {
                 >
                   Delete
                 </button>
+                )}
               </div>
             </div>
           ) : (
@@ -219,6 +231,7 @@ export default function Categories() {
               <span className="row" style={{ gap: 10, opacity: isPending(c) ? 0.5 : 1 }}>
                 <span className="swatch" style={c.color ? { background: c.color } : undefined} />
                 <span style={{ fontWeight: 600 }}>{c.name}</span>
+                {c.system && <span className="pill">built in</span>}
               </span>
               <span className="muted small">Edit</span>
             </button>

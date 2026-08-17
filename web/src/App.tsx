@@ -17,6 +17,7 @@ import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions";
 import TransactionDetail from "./pages/TransactionDetail";
 import Categories from "./pages/Categories";
+import Rules from "./pages/Rules";
 import Recurring from "./pages/Recurring";
 import Family from "./pages/Family";
 import Settings from "./pages/Settings";
@@ -104,6 +105,7 @@ export default function App() {
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/transactions/:id" element={<TransactionDetail />} />
           <Route path="/categories" element={<Categories />} />
+          <Route path="/rules" element={<Rules />} />
           <Route path="/recurring" element={<Recurring />} />
           <Route path="/family" element={<Family />} />
           <Route path="/settings" element={<Settings />} />

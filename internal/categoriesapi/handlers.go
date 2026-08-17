@@ -27,7 +27,14 @@ type Handlers struct {
 }
 
 func catJSON(c store.Category) map[string]any {
-	return map[string]any{"id": c.ID, "name": c.Name, "color": c.Color}
+	return map[string]any{
+		"id":    c.ID,
+		"name":  c.Name,
+		"color": c.Color,
+		// System categories can be recolored but not renamed or removed.
+		"system_key": c.SystemKey,
+		"system":     c.SystemKey != nil,
+	}
 }
 
 // List handles GET /api/categories.
@@ -117,6 +124,12 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if existing.SystemKey != nil && !strings.EqualFold(existing.Name, req.Name) {
+		httpx.Error(w, http.StatusBadRequest, "system_category",
+			"this category is built in and cannot be renamed — you can still change its color")
+		return
+	}
+
 	if err := h.Store.UpdateCategory(ctx, famID, id, req.Name, req.Color); err != nil {
 		if store.IsUniqueViolation(err) {
 			httpx.Error(w, http.StatusConflict, "duplicate", "a category with that name already exists")
@@ -151,7 +164,22 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
-	err = h.Store.DeleteCategory(r.Context(), family.FamilyID(r.Context()), id)
+	ctx := r.Context()
+	existing, err := h.Store.GetCategory(ctx, family.FamilyID(ctx), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httpx.Error(w, http.StatusNotFound, "not_found", "category not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load category")
+		return
+	}
+	if existing.SystemKey != nil {
+		httpx.Error(w, http.StatusBadRequest, "system_category",
+			"this category is built in and cannot be deleted")
+		return
+	}
+	err = h.Store.DeleteCategory(ctx, family.FamilyID(ctx), id)
 	if errors.Is(err, store.ErrNotFound) {
 		httpx.Error(w, http.StatusNotFound, "not_found", "category not found")
 		return

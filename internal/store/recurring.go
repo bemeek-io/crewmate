@@ -28,6 +28,10 @@ type RecurringSeries struct {
 	LastSeenAt         time.Time
 	OccurrenceCount    int
 	Dismissed          bool
+	// Label is the system category this merchant was labeled with, carried by
+	// the series rule (nil when unlabeled).
+	LabelSystemKey *string
+	LabelName      *string
 }
 
 type RecurringUpsert struct {
@@ -80,17 +84,25 @@ func (s *Store) UpsertRecurringSeries(ctx context.Context, u RecurringUpsert) (u
 	return id, nil
 }
 
+// The rule join surfaces a merchant's label (see UpsertSeriesRule).
+const seriesFrom = `
+	FROM recurring_series s
+	LEFT JOIN category_rules rr
+	       ON rr.family_id = s.family_id AND rr.payee_match = s.merchant_key AND rr.source = 'series'
+	LEFT JOIN categories lc ON lc.id = rr.category_id`
+
 const seriesCols = `
-	id, family_id, merchant_key, kind, typical_amount_cents, min_amount_cents, max_amount_cents,
-	cadence, period_days, interval_spread_pct, amount_spread_pct, day_spread_days,
-	first_seen_at, last_seen_at, occurrence_count, dismissed`
+	s.id, s.family_id, s.merchant_key, s.kind, s.typical_amount_cents, s.min_amount_cents,
+	s.max_amount_cents, s.cadence, s.period_days, s.interval_spread_pct, s.amount_spread_pct,
+	s.day_spread_days, s.first_seen_at, s.last_seen_at, s.occurrence_count, s.dismissed,
+	lc.system_key, lc.name`
 
 func scanSeries(row pgx.Row) (*RecurringSeries, error) {
 	var r RecurringSeries
 	if err := row.Scan(&r.ID, &r.FamilyID, &r.MerchantKey, &r.Kind, &r.TypicalAmountCents,
 		&r.MinAmountCents, &r.MaxAmountCents, &r.Cadence, &r.PeriodDays, &r.IntervalSpreadPct,
 		&r.AmountSpreadPct, &r.DaySpreadDays, &r.FirstSeenAt, &r.LastSeenAt,
-		&r.OccurrenceCount, &r.Dismissed); err != nil {
+		&r.OccurrenceCount, &r.Dismissed, &r.LabelSystemKey, &r.LabelName); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -98,10 +110,9 @@ func scanSeries(row pgx.Row) (*RecurringSeries, error) {
 
 // ListRecurringSeries returns everything classified as recurring or better.
 func (s *Store) ListRecurringSeries(ctx context.Context, familyID uuid.UUID) ([]RecurringSeries, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT `+seriesCols+`
-		FROM recurring_series
-		WHERE family_id = $1 AND kind <> 'none'
-		ORDER BY (kind = 'subscription') DESC, last_seen_at DESC`, familyID)
+	rows, err := s.Pool.Query(ctx, `SELECT `+seriesCols+seriesFrom+`
+		WHERE s.family_id = $1 AND s.kind <> 'none'
+		ORDER BY (s.kind = 'subscription') DESC, s.last_seen_at DESC`, familyID)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +130,7 @@ func (s *Store) ListRecurringSeries(ctx context.Context, familyID uuid.UUID) ([]
 
 func (s *Store) GetRecurringSeries(ctx context.Context, familyID, id uuid.UUID) (*RecurringSeries, error) {
 	r, err := scanSeries(s.Pool.QueryRow(ctx,
-		`SELECT `+seriesCols+` FROM recurring_series WHERE id = $2 AND family_id = $1`, familyID, id))
+		`SELECT `+seriesCols+seriesFrom+` WHERE s.id = $2 AND s.family_id = $1`, familyID, id))
 	if err == pgx.ErrNoRows {
 		return nil, ErrNotFound
 	}

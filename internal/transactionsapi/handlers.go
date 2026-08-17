@@ -231,7 +231,82 @@ func seriesJSON(s store.RecurringSeries) map[string]any {
 		"last_seen_at":         s.LastSeenAt,
 		"occurrence_count":     s.OccurrenceCount,
 		"dismissed":            s.Dismissed,
+		"label_system_key":     s.LabelSystemKey,
+		"label_name":           s.LabelName,
 	}
+}
+
+// LabelRecurring handles PUT /api/recurring/{id}/label:
+// {system_key: "subscription"|"loan_payment"|null}
+//
+// Labeling records a rule for that merchant, so future charges are categorized
+// automatically (and silently — a rule match is an expected outcome). Passing
+// null clears the label and its rule.
+func (h *Handlers) LabelRecurring(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	famID := family.FamilyID(ctx)
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var req struct {
+		SystemKey *string `json:"system_key"`
+	}
+	if !httpx.Decode(w, r, &req) {
+		return
+	}
+	s, err := h.Store.GetRecurringSeries(ctx, famID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		httpx.Error(w, http.StatusNotFound, "not_found", "series not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load series")
+		return
+	}
+
+	if req.SystemKey == nil {
+		if err := h.Store.DeleteSeriesRule(ctx, famID, s.MerchantKey); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "internal", "could not clear label")
+			return
+		}
+		httpx.JSON(w, http.StatusOK, map[string]any{"ok": true, "label": nil})
+		return
+	}
+
+	key := *req.SystemKey
+	if key != store.SystemSubscription && key != store.SystemLoanPayment {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "unknown label")
+		return
+	}
+	cat, err := h.Store.GetSystemCategory(ctx, famID, key)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not resolve category")
+		return
+	}
+	if err := h.Store.UpsertSeriesRule(ctx, famID, cat.ID, s.MerchantKey); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not save label")
+		return
+	}
+
+	// Apply to the charges already on file that carry no note, so the label
+	// takes effect on history and not just future charges.
+	queued := 0
+	existing, err := h.Store.UncategorizedForMerchant(ctx, famID, s.MerchantKey, backfillLimit)
+	if err != nil {
+		h.Log.Warn("label backfill lookup", zap.Error(err))
+	}
+	for _, t := range existing {
+		if err := h.Store.EnqueueNoteWrite(ctx, t.ConnectionID, t.CrewTxnID, cat.Name); err != nil {
+			h.Log.Warn("queue label note", zap.Error(err))
+			continue
+		}
+		queued++
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"ok": true, "label": key, "category": cat.Name, "queued": queued,
+	})
 }
 
 // ListRecurring handles GET /api/recurring.

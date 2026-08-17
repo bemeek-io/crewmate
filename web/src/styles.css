@@ -521,7 +521,9 @@ select:focus {
 .filter-divider {
   height: 1px;
   background: var(--border);
-  margin: 12px 0 4px;
+  /* The chip row below adds 4px of its own, so the visual gap under the rule
+     lands a little wider than above it — the category block is denser. */
+  margin: 12px 0 12px;
 }
 
 /* Back control on detail pages. Sits above the title, not inline with it, so

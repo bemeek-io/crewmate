@@ -1,14 +1,23 @@
 # Local testing override: no TLS proxy, app published directly on :8080.
-# Push + service worker still work in desktop browsers because localhost is a
-# secure context. iPhones require real HTTPS (use a tunnel — see README).
 #
 #   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Browse http://localhost:8080 and set APP_BASE_URL=http://localhost:8080.
+# localhost is a secure context, so the service worker and push work in
+# desktop browsers without TLS. Testing on an iPhone needs real HTTPS —
+# expose the app through a tunnel (Tailscale/cloudflared) and point
+# APP_BASE_URL at that hostname instead.
+#
+# Single replica only: a fixed host port can't be scaled. To exercise the
+# multi-replica lease logic locally, run extra instances with `go run`
+# against the same database using LISTEN_ADDR=:8081.
 services:
   app:
     ports: !override
       - "8080:8080"
     environment:
       TRUST_PROXY: "false"
+
+  # Parked behind an inactive profile so `up` never starts it locally.
   proxy:
-    deploy:
-      replicas: 0
+    profiles: ["tls-proxy"]

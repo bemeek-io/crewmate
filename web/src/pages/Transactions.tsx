@@ -163,6 +163,8 @@ export default function Transactions() {
         ))}
       </div>
 
+      <div className="filter-divider" />
+
       <div className="chips">
         <button
           className={`chip ${uncategorized ? "on" : ""}`}

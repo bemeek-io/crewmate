@@ -8,43 +8,6 @@ import (
 	crew "github.com/bemeek-io/go-crew"
 )
 
-// selectedSpendQuery reads the pocket the member's physical card is currently
-// set to swipe from.
-//
-// This is User.userSpendConfig.selectedSpendSubaccount — NOT
-// Account.PrimarySubaccount, which is only the account's default and does not
-// change when the spend pocket is repointed. It is also not the bare
-// User.selectedSpendSubaccount in Crew's published docs, which the live schema
-// rejects. The SDK doesn't model userSpendConfig yet, so this is the one
-// remaining raw query.
-const selectedSpendQuery = `query SelectedSpendPocket {
-  currentUser {
-    userSpendConfig {
-      id
-      selectedSpendSubaccount { id name }
-    }
-  }
-}`
-
-// selectedSpendPocket returns the currently selected spend pocket, or nil when
-// the member hasn't chosen one (in which case the account default applies).
-func selectedSpendPocket(ctx context.Context, client *crew.Client) *crew.Subaccount {
-	var out struct {
-		CurrentUser struct {
-			UserSpendConfig *struct {
-				SelectedSpendSubaccount *crew.Subaccount `json:"selectedSpendSubaccount"`
-			} `json:"userSpendConfig"`
-		} `json:"currentUser"`
-	}
-	if err := client.Execute(ctx, selectedSpendQuery, nil, &out); err != nil {
-		return nil
-	}
-	if out.CurrentUser.UserSpendConfig == nil {
-		return nil
-	}
-	return out.CurrentUser.UserSpendConfig.SelectedSpendSubaccount
-}
-
 // Card is a debit card and the pocket it spends from.
 type Card struct {
 	ID             string `json:"id"`
@@ -61,24 +24,27 @@ type Card struct {
 // per merchant — a couple dozen on an active account — but those are managed in
 // Crew itself, so only physical cards reach the snapshot.
 //
-// accounts comes from the CurrentUser call the caller already made; a physical
-// card's pocket lives on its account (PrimarySubaccount), not on the card, and
-// DebitCards doesn't fetch the account body.
+// user comes from the CurrentUser call the caller already made. Both it and
+// the owning account are needed to resolve a physical card's pocket: the
+// member's explicit choice lives on the user, the default on the account, and
+// DebitCards fetches neither.
 //
 // A nil error with no cards is normal; an error is returned so callers can
 // leave the previous snapshot in place rather than blanking the list on a
 // transient failure.
-func Fetch(ctx context.Context, client *crew.Client, accounts []crew.Account) ([]Card, error) {
+func Fetch(ctx context.Context, client *crew.Client, user *crew.User) ([]Card, error) {
 	cards, err := client.DebitCards(ctx)
 	if err != nil {
 		return nil, err
+	}
+	var accounts []crew.Account
+	if user != nil {
+		accounts = user.Accounts
 	}
 	byID := make(map[string]*crew.Account, len(accounts))
 	for i := range accounts {
 		byID[accounts[i].ID] = &accounts[i]
 	}
-	// The member's explicit choice wins over the account default.
-	selected := selectedSpendPocket(ctx, client)
 
 	var out []Card
 	seen := map[string]bool{}
@@ -99,11 +65,9 @@ func Fetch(ctx context.Context, client *crew.Client, accounts []crew.Account) ([
 		if c.Account != nil {
 			acct = byID[c.Account.ID]
 		}
-		pocket := selected
-		if pocket == nil {
-			pocket = c.SpendSubaccount(acct)
-		}
-		if pocket != nil {
+		// Resolution order is the SDK's: the card's own pinned pocket, then
+		// the member's explicit choice, then the account default.
+		if pocket := c.SpendSubaccount(user, acct); pocket != nil {
 			card.SubaccountID, card.SubaccountName = pocket.ID, pocket.Name
 		}
 		out = append(out, card)

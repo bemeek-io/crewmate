@@ -516,6 +516,14 @@ select:focus {
   background: var(--danger);
 }
 
+/* Divides the timeframe chips from the category chips, so the two filter
+   groups don't read as one wrapped row. */
+.filter-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 12px 0 4px;
+}
+
 /* Back control on detail pages. Sits above the title, not inline with it, so
    the heading keeps its full width on a narrow screen. */
 .back-link {

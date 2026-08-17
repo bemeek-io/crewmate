@@ -1,0 +1,52 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    # Scale freely: docker compose up -d --scale app=3
+    # Replicas coordinate through Postgres leases; each Crew connection is
+    # watched by exactly one replica at a time.
+    ports:
+      - "8080"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://crewmate:${POSTGRES_PASSWORD}@db:5432/crewmate?sslmode=disable
+      TRUST_PROXY: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crewmate
+      POSTGRES_DB: crewmate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crewmate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # TLS-terminating load balancer across app replicas. Push, secure cookies,
+  # and the service worker all REQUIRE HTTPS — point APP_BASE_URL at the
+  # public hostname this proxy serves.
+  proxy:
+    image: docker.io/library/caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy_data:

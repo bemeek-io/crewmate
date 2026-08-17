@@ -1,0 +1,7 @@
+{$APP_DOMAIN} {
+	# Automatic HTTPS for real domains; self-signed for "localhost".
+	reverse_proxy app:8080 {
+		lb_policy round_robin
+	}
+	encode gzip
+}

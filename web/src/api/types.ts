@@ -66,13 +66,21 @@ export interface Category {
 export interface RecurringSeries {
   id: string;
   merchant_key: string;
-  amount_cents: number;
+  /** subscription = fixed amount on a steady schedule; recurring = repeats but varies. */
+  kind: "subscription" | "recurring" | "none";
+  is_subscription: boolean;
+  typical_amount_cents: number;
+  min_amount_cents: number;
+  max_amount_cents: number;
   cadence: string;
   period_days: number | null;
+  /** Evidence behind the classification. */
+  interval_spread_pct: number;
+  amount_spread_pct: number;
+  day_spread_days: number;
   first_seen_at: string;
   last_seen_at: string;
   occurrence_count: number;
-  is_subscription: boolean;
   dismissed: boolean;
 }
 

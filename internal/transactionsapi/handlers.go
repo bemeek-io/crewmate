@@ -57,17 +57,27 @@ func txnJSON(t *store.Transaction) map[string]any {
 func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
-	f := store.TxnFilter{Uncategorized: q.Get("uncategorized") == "1"}
+	f := store.TxnFilter{
+		Uncategorized: q.Get("uncategorized") == "1",
+		Query:         q.Get("q"),
+	}
 	if v := q.Get("limit"); v != "" {
 		f.Limit, _ = strconv.Atoi(v)
 	}
-	if v := q.Get("category"); v != "" {
-		id, err := uuid.Parse(v)
-		if err != nil {
-			httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid category id")
-			return
+	// `category` may repeat (multi-select) or arrive comma-separated.
+	for _, raw := range q["category"] {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			id, err := uuid.Parse(part)
+			if err != nil {
+				httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid category id")
+				return
+			}
+			f.CategoryIDs = append(f.CategoryIDs, id)
 		}
-		f.CategoryID = &id
 	}
 	if v := q.Get("before"); v != "" {
 		parts := strings.SplitN(v, ",", 2)
@@ -201,6 +211,29 @@ func (h *Handlers) SetCategory(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true, "queued": queued, "note": note})
 }
 
+// seriesJSON exposes the classification along with the evidence behind it, so
+// the UI can explain why something was called a subscription.
+func seriesJSON(s store.RecurringSeries) map[string]any {
+	return map[string]any{
+		"id":                   s.ID,
+		"merchant_key":         s.MerchantKey,
+		"kind":                 s.Kind,
+		"is_subscription":      s.Kind == "subscription",
+		"typical_amount_cents": s.TypicalAmountCents,
+		"min_amount_cents":     s.MinAmountCents,
+		"max_amount_cents":     s.MaxAmountCents,
+		"cadence":              s.Cadence,
+		"period_days":          s.PeriodDays,
+		"interval_spread_pct":  s.IntervalSpreadPct,
+		"amount_spread_pct":    s.AmountSpreadPct,
+		"day_spread_days":      s.DaySpreadDays,
+		"first_seen_at":        s.FirstSeenAt,
+		"last_seen_at":         s.LastSeenAt,
+		"occurrence_count":     s.OccurrenceCount,
+		"dismissed":            s.Dismissed,
+	}
+}
+
 // ListRecurring handles GET /api/recurring.
 func (h *Handlers) ListRecurring(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -211,18 +244,7 @@ func (h *Handlers) ListRecurring(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]map[string]any, 0, len(series))
 	for _, s := range series {
-		items = append(items, map[string]any{
-			"id":               s.ID,
-			"merchant_key":     s.MerchantKey,
-			"amount_cents":     s.AmountCents,
-			"cadence":          s.Cadence,
-			"period_days":      s.PeriodDays,
-			"first_seen_at":    s.FirstSeenAt,
-			"last_seen_at":     s.LastSeenAt,
-			"occurrence_count": s.OccurrenceCount,
-			"is_subscription":  s.IsSubscription,
-			"dismissed":        s.Dismissed,
-		})
+		items = append(items, seriesJSON(s))
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"series": items})
 }
@@ -246,7 +268,7 @@ func (h *Handlers) RecurringTransactions(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load series")
 		return
 	}
-	txns, err := h.Store.TransactionsInSeries(ctx, famID, s.MerchantKey, s.AmountCents, s.AmountTolerance, 100)
+	txns, err := h.Store.TransactionsInSeries(ctx, famID, s.MerchantKey, 100)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load transactions")
 		return
@@ -256,16 +278,7 @@ func (h *Handlers) RecurringTransactions(w http.ResponseWriter, r *http.Request)
 		items = append(items, txnJSON(t))
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"series": map[string]any{
-			"id":               s.ID,
-			"merchant_key":     s.MerchantKey,
-			"amount_cents":     s.AmountCents,
-			"amount_tolerance": s.AmountTolerance,
-			"cadence":          s.Cadence,
-			"period_days":      s.PeriodDays,
-			"occurrence_count": s.OccurrenceCount,
-			"is_subscription":  s.IsSubscription,
-		},
+		"series":       seriesJSON(*s),
 		"transactions": items,
 	})
 }

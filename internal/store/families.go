@@ -57,6 +57,9 @@ func (s *Store) GetMembership(ctx context.Context, userID uuid.UUID) (*Membershi
 	return &m, nil
 }
 
+// CreateFamily creates a family and makes the caller its admin. It is stamped
+// with the creator's Crew household ID (when known) so other members of that
+// Crew family are auto-joined when they sign in.
 func (s *Store) CreateFamily(ctx context.Context, name string, creator uuid.UUID) (*Family, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -64,9 +67,21 @@ func (s *Store) CreateFamily(ctx context.Context, name string, creator uuid.UUID
 	}
 	defer tx.Rollback(ctx)
 
+	var crewFamilyID *string
+	var raw string
+	if err := tx.QueryRow(ctx, `SELECT crew_family_id FROM users WHERE id = $1`, creator).Scan(&raw); err == nil && raw != "" {
+		// Only claim the Crew household if no other family already has it.
+		var taken bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM families WHERE crew_family_id = $1)`, raw).Scan(&taken); err == nil && !taken {
+			crewFamilyID = &raw
+		}
+	}
+
 	var f Family
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO families (name) VALUES ($1) RETURNING id, name, created_at`, name,
+		INSERT INTO families (name, crew_family_id) VALUES ($1, $2)
+		RETURNING id, name, created_at`, name, crewFamilyID,
 	).Scan(&f.ID, &f.Name, &f.CreatedAt); err != nil {
 		return nil, err
 	}

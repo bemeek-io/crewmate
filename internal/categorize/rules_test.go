@@ -39,17 +39,20 @@ func TestClassifyCadence(t *testing.T) {
 	}
 }
 
-func TestMedianInterval(t *testing.T) {
+func TestIntervalStats(t *testing.T) {
 	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	times := []time.Time{base, base.AddDate(0, 0, 30), base.AddDate(0, 0, 61), base.AddDate(0, 0, 91)}
-	med, ok := medianInterval(times)
+	med, spread, ok := intervalStats(times)
 	if !ok {
 		t.Fatal("expected ok")
 	}
 	if med < 29 || med > 31 {
 		t.Fatalf("median = %v, want ~30", med)
 	}
-	if _, ok := medianInterval(times[:1]); ok {
+	if spread > 10 {
+		t.Fatalf("spread = %d%%, want a tight schedule", spread)
+	}
+	if _, _, ok := intervalStats(times[:1]); ok {
 		t.Fatal("single occurrence should not produce an interval")
 	}
 }

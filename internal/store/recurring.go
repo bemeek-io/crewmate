@@ -8,119 +8,128 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// RecurringSeries is one merchant's repeated-charge profile. Kind separates a
+// true subscription (fixed amount, steady schedule) from a looser recurring
+// spend; the spread fields are the evidence behind that call.
 type RecurringSeries struct {
-	ID              uuid.UUID
-	FamilyID        uuid.UUID
-	MerchantKey     string
-	AmountCents     int64
-	AmountTolerance int
-	Cadence         string
-	PeriodDays      *int
-	FirstSeenAt     time.Time
-	LastSeenAt      time.Time
-	OccurrenceCount int
-	IsSubscription  bool
-	Dismissed       bool
+	ID                 uuid.UUID
+	FamilyID           uuid.UUID
+	MerchantKey        string
+	Kind               string
+	TypicalAmountCents int64
+	MinAmountCents     int64
+	MaxAmountCents     int64
+	Cadence            string
+	PeriodDays         *int
+	IntervalSpreadPct  int
+	AmountSpreadPct    int
+	DaySpreadDays      int
+	FirstSeenAt        time.Time
+	LastSeenAt         time.Time
+	OccurrenceCount    int
+	Dismissed          bool
 }
 
-// FindRecurringSeries matches by merchant and amount within each series' tolerance.
-func (s *Store) FindRecurringSeries(ctx context.Context, familyID uuid.UUID, merchantKey string, amountCents int64) (*RecurringSeries, error) {
-	var r RecurringSeries
+type RecurringUpsert struct {
+	FamilyID           uuid.UUID
+	MerchantKey        string
+	Kind               string
+	TypicalAmountCents int64
+	MinAmountCents     int64
+	MaxAmountCents     int64
+	Cadence            string
+	PeriodDays         *int
+	IntervalSpreadPct  int
+	AmountSpreadPct    int
+	DaySpreadDays      int
+	FirstSeenAt        time.Time
+	LastSeenAt         time.Time
+	OccurrenceCount    int
+}
+
+// UpsertRecurringSeries writes the merchant's current classification. A series
+// the user dismissed stays dismissed.
+func (s *Store) UpsertRecurringSeries(ctx context.Context, u RecurringUpsert) (uuid.UUID, error) {
+	var id uuid.UUID
 	err := s.Pool.QueryRow(ctx, `
-		SELECT id, family_id, merchant_key, amount_cents, amount_tolerance, cadence, period_days,
-		       first_seen_at, last_seen_at, occurrence_count, is_subscription, dismissed
-		FROM recurring_series
-		WHERE family_id = $1 AND merchant_key = $2
-		  AND abs(amount_cents - $3) <= amount_tolerance
-		ORDER BY abs(amount_cents - $3) LIMIT 1`,
-		familyID, merchantKey, amountCents,
-	).Scan(&r.ID, &r.FamilyID, &r.MerchantKey, &r.AmountCents, &r.AmountTolerance, &r.Cadence,
-		&r.PeriodDays, &r.FirstSeenAt, &r.LastSeenAt, &r.OccurrenceCount, &r.IsSubscription, &r.Dismissed)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
+		INSERT INTO recurring_series (
+			family_id, merchant_key, kind, typical_amount_cents, min_amount_cents,
+			max_amount_cents, cadence, period_days, interval_spread_pct, amount_spread_pct,
+			day_spread_days, first_seen_at, last_seen_at, occurrence_count
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		ON CONFLICT (family_id, merchant_key) DO UPDATE SET
+			kind = EXCLUDED.kind,
+			typical_amount_cents = EXCLUDED.typical_amount_cents,
+			min_amount_cents = EXCLUDED.min_amount_cents,
+			max_amount_cents = EXCLUDED.max_amount_cents,
+			cadence = EXCLUDED.cadence,
+			period_days = EXCLUDED.period_days,
+			interval_spread_pct = EXCLUDED.interval_spread_pct,
+			amount_spread_pct = EXCLUDED.amount_spread_pct,
+			day_spread_days = EXCLUDED.day_spread_days,
+			first_seen_at = LEAST(recurring_series.first_seen_at, EXCLUDED.first_seen_at),
+			last_seen_at = GREATEST(recurring_series.last_seen_at, EXCLUDED.last_seen_at),
+			occurrence_count = EXCLUDED.occurrence_count
+		RETURNING id`,
+		u.FamilyID, u.MerchantKey, u.Kind, u.TypicalAmountCents, u.MinAmountCents,
+		u.MaxAmountCents, u.Cadence, u.PeriodDays, u.IntervalSpreadPct, u.AmountSpreadPct,
+		u.DaySpreadDays, u.FirstSeenAt, u.LastSeenAt, u.OccurrenceCount).Scan(&id)
 	if err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
+}
+
+const seriesCols = `
+	id, family_id, merchant_key, kind, typical_amount_cents, min_amount_cents, max_amount_cents,
+	cadence, period_days, interval_spread_pct, amount_spread_pct, day_spread_days,
+	first_seen_at, last_seen_at, occurrence_count, dismissed`
+
+func scanSeries(row pgx.Row) (*RecurringSeries, error) {
+	var r RecurringSeries
+	if err := row.Scan(&r.ID, &r.FamilyID, &r.MerchantKey, &r.Kind, &r.TypicalAmountCents,
+		&r.MinAmountCents, &r.MaxAmountCents, &r.Cadence, &r.PeriodDays, &r.IntervalSpreadPct,
+		&r.AmountSpreadPct, &r.DaySpreadDays, &r.FirstSeenAt, &r.LastSeenAt,
+		&r.OccurrenceCount, &r.Dismissed); err != nil {
 		return nil, err
 	}
 	return &r, nil
 }
 
-func (s *Store) CreateRecurringSeries(ctx context.Context, familyID uuid.UUID, merchantKey string, amountCents int64, tolerance int, seenAt time.Time) (*RecurringSeries, error) {
-	var r RecurringSeries
-	err := s.Pool.QueryRow(ctx, `
-		INSERT INTO recurring_series (family_id, merchant_key, amount_cents, amount_tolerance, first_seen_at, last_seen_at)
-		VALUES ($1, $2, $3, $4, $5, $5)
-		ON CONFLICT (family_id, merchant_key, amount_cents)
-		DO UPDATE SET last_seen_at = GREATEST(recurring_series.last_seen_at, EXCLUDED.last_seen_at)
-		RETURNING id, family_id, merchant_key, amount_cents, amount_tolerance, cadence, period_days,
-		          first_seen_at, last_seen_at, occurrence_count, is_subscription, dismissed`,
-		familyID, merchantKey, amountCents, tolerance, seenAt,
-	).Scan(&r.ID, &r.FamilyID, &r.MerchantKey, &r.AmountCents, &r.AmountTolerance, &r.Cadence,
-		&r.PeriodDays, &r.FirstSeenAt, &r.LastSeenAt, &r.OccurrenceCount, &r.IsSubscription, &r.Dismissed)
-	if err != nil {
-		return nil, err
-	}
-	return &r, nil
-}
-
-func (s *Store) UpdateRecurringSeries(ctx context.Context, id uuid.UUID, cadence string, periodDays *int, occurrenceCount int, lastSeen time.Time, isSubscription bool) error {
-	_, err := s.Pool.Exec(ctx, `
-		UPDATE recurring_series
-		SET cadence = $2, period_days = $3, occurrence_count = $4,
-		    last_seen_at = GREATEST(last_seen_at, $5),
-		    is_subscription = (is_subscription OR $6) AND NOT dismissed
-		WHERE id = $1`,
-		id, cadence, periodDays, occurrenceCount, lastSeen, isSubscription)
-	return err
-}
-
+// ListRecurringSeries returns everything classified as recurring or better.
 func (s *Store) ListRecurringSeries(ctx context.Context, familyID uuid.UUID) ([]RecurringSeries, error) {
-	rows, err := s.Pool.Query(ctx, `
-		SELECT id, family_id, merchant_key, amount_cents, amount_tolerance, cadence, period_days,
-		       first_seen_at, last_seen_at, occurrence_count, is_subscription, dismissed
+	rows, err := s.Pool.Query(ctx, `SELECT `+seriesCols+`
 		FROM recurring_series
-		WHERE family_id = $1 AND occurrence_count >= 2
-		ORDER BY is_subscription DESC, last_seen_at DESC`, familyID)
+		WHERE family_id = $1 AND kind <> 'none'
+		ORDER BY (kind = 'subscription') DESC, last_seen_at DESC`, familyID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []RecurringSeries
 	for rows.Next() {
-		var r RecurringSeries
-		if err := rows.Scan(&r.ID, &r.FamilyID, &r.MerchantKey, &r.AmountCents, &r.AmountTolerance,
-			&r.Cadence, &r.PeriodDays, &r.FirstSeenAt, &r.LastSeenAt, &r.OccurrenceCount,
-			&r.IsSubscription, &r.Dismissed); err != nil {
+		r, err := scanSeries(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, r)
+		out = append(out, *r)
 	}
 	return out, rows.Err()
 }
 
-// GetRecurringSeries loads one series, family-scoped.
 func (s *Store) GetRecurringSeries(ctx context.Context, familyID, id uuid.UUID) (*RecurringSeries, error) {
-	var r RecurringSeries
-	err := s.Pool.QueryRow(ctx, `
-		SELECT id, family_id, merchant_key, amount_cents, amount_tolerance, cadence, period_days,
-		       first_seen_at, last_seen_at, occurrence_count, is_subscription, dismissed
-		FROM recurring_series WHERE id = $2 AND family_id = $1`, familyID, id,
-	).Scan(&r.ID, &r.FamilyID, &r.MerchantKey, &r.AmountCents, &r.AmountTolerance, &r.Cadence,
-		&r.PeriodDays, &r.FirstSeenAt, &r.LastSeenAt, &r.OccurrenceCount, &r.IsSubscription, &r.Dismissed)
+	r, err := scanSeries(s.Pool.QueryRow(ctx,
+		`SELECT `+seriesCols+` FROM recurring_series WHERE id = $2 AND family_id = $1`, familyID, id))
 	if err == pgx.ErrNoRows {
 		return nil, ErrNotFound
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &r, nil
+	return r, err
 }
 
 func (s *Store) SetRecurringDismissed(ctx context.Context, familyID, id uuid.UUID, dismissed bool) error {
 	tag, err := s.Pool.Exec(ctx, `
-		UPDATE recurring_series
-		SET dismissed = $3, is_subscription = is_subscription AND NOT $3
-		WHERE id = $2 AND family_id = $1`, familyID, id, dismissed)
+		UPDATE recurring_series SET dismissed = $3 WHERE id = $2 AND family_id = $1`,
+		familyID, id, dismissed)
 	if err != nil {
 		return err
 	}
@@ -128,4 +137,31 @@ func (s *Store) SetRecurringDismissed(ctx context.Context, familyID, id uuid.UUI
 		return ErrNotFound
 	}
 	return nil
+}
+
+// MerchantCharge is one occurrence used for recurring classification.
+type MerchantCharge struct {
+	OccurredAt  time.Time
+	AmountCents int64
+}
+
+// MerchantHistory returns a merchant's spend history, oldest first.
+func (s *Store) MerchantHistory(ctx context.Context, familyID uuid.UUID, merchantKey string) ([]MerchantCharge, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT occurred_at, amount_cents FROM transactions
+		WHERE family_id = $1 AND merchant_key = $2 AND amount_cents < 0
+		ORDER BY occurred_at`, familyID, merchantKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MerchantCharge
+	for rows.Next() {
+		var c MerchantCharge
+		if err := rows.Scan(&c.OccurredAt, &c.AmountCents); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }

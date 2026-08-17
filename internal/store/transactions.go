@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -185,11 +186,15 @@ func (s *Store) SweepUnnotified(ctx context.Context, limit int) ([]uuid.UUID, er
 }
 
 type TxnFilter struct {
-	BeforeTime    *time.Time // keyset cursor: (occurred_at, id) strictly before
-	BeforeID      *uuid.UUID
-	Limit         int
-	CategoryID    *uuid.UUID
+	BeforeTime *time.Time // keyset cursor: (occurred_at, id) strictly before
+	BeforeID   *uuid.UUID
+	Limit      int
+	// CategoryIDs selects any of the given categories; combined with
+	// Uncategorized it also includes Misc.
+	CategoryIDs   []uuid.UUID
 	Uncategorized bool
+	// Query matches merchant, note, or memo text, case-insensitively.
+	Query string
 }
 
 func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnFilter) ([]*Transaction, error) {
@@ -198,20 +203,29 @@ func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnF
 	}
 	q := `SELECT ` + txnCols + txnFrom + ` WHERE t.family_id = $1`
 	args := []any{familyID}
+	arg := func(v any) string {
+		args = append(args, v)
+		return "$" + strconv.Itoa(len(args))
+	}
 	if f.BeforeTime != nil && f.BeforeID != nil {
-		args = append(args, *f.BeforeTime, *f.BeforeID)
-		q += ` AND (t.occurred_at, t.id) < ($2, $3)`
+		q += ` AND (t.occurred_at, t.id) < (` + arg(*f.BeforeTime) + `, ` + arg(*f.BeforeID) + `)`
 	}
-	if f.CategoryID != nil {
-		args = append(args, *f.CategoryID)
-		q += ` AND c.id = $` + strconv.Itoa(len(args))
-	}
-	if f.Uncategorized {
+	// Category selection: named categories, Misc, or both.
+	switch {
+	case len(f.CategoryIDs) > 0 && f.Uncategorized:
+		q += ` AND (c.id = ANY(` + arg(f.CategoryIDs) + `) OR c.id IS NULL)`
+	case len(f.CategoryIDs) > 0:
+		q += ` AND c.id = ANY(` + arg(f.CategoryIDs) + `)`
+	case f.Uncategorized:
 		// No note, or a note that doesn't name one of the family's categories.
 		q += ` AND c.id IS NULL`
 	}
-	args = append(args, f.Limit)
-	q += ` ORDER BY t.occurred_at DESC, t.id DESC LIMIT $` + strconv.Itoa(len(args))
+	if term := strings.TrimSpace(f.Query); term != "" {
+		p := arg("%" + term + "%")
+		q += ` AND (t.payee ILIKE ` + p + ` OR t.note ILIKE ` + p +
+			` OR t.title ILIKE ` + p + ` OR t.description ILIKE ` + p + `)`
+	}
+	q += ` ORDER BY t.occurred_at DESC, t.id DESC LIMIT ` + arg(f.Limit)
 
 	rows, err := s.Pool.Query(ctx, q, args...)
 	if err != nil {
@@ -277,18 +291,17 @@ func (s *Store) UncategorizedForMerchant(ctx context.Context, familyID uuid.UUID
 	return out, rows.Err()
 }
 
-// TransactionsInSeries lists the transactions that make up a recurring series.
-// It matches on the series' own definition (merchant + amount within its
-// tolerance) rather than the recurring_id link, so occurrences ingested before
-// the series existed are included too.
-func (s *Store) TransactionsInSeries(ctx context.Context, familyID uuid.UUID, merchantKey string, amountCents int64, tolerance int, limit int) ([]*Transaction, error) {
+// TransactionsInSeries lists the charges behind a recurring series. A series
+// covers a whole merchant, so this matches on merchant rather than the
+// recurring_id link — occurrences ingested before the series existed count too.
+func (s *Store) TransactionsInSeries(ctx context.Context, familyID uuid.UUID, merchantKey string, limit int) ([]*Transaction, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 100
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
-		WHERE t.family_id = $1 AND t.merchant_key = $2 AND abs(t.amount_cents - $3) <= $4
-		ORDER BY t.occurred_at DESC LIMIT $5`,
-		familyID, merchantKey, amountCents, tolerance, limit)
+		WHERE t.family_id = $1 AND t.merchant_key = $2 AND t.amount_cents < 0
+		ORDER BY t.occurred_at DESC LIMIT $3`,
+		familyID, merchantKey, limit)
 	if err != nil {
 		return nil, err
 	}

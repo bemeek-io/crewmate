@@ -85,7 +85,9 @@ h2 {
   align-items: center;
   gap: 12px;
 }
-.row .grow {
+/* min-width:0 is what actually lets a flex child shrink below its content
+   width; without it long names push the row past the screen edge. */
+.grow {
   flex: 1;
   min-width: 0;
 }
@@ -215,6 +217,7 @@ select:focus {
   border-bottom: 1px solid var(--border);
   color: inherit;
   text-decoration: none;
+  min-width: 0;
 }
 .txn-row:last-child {
   border-bottom: 0;
@@ -235,13 +238,16 @@ select:focus {
 .txn-logo img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* contain, not cover: merchant logos vary wildly in aspect ratio and were
+     being cropped. Padding keeps them off the tile edge. */
+  object-fit: contain;
+  padding: 5px;
 }
 .txn-title {
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Long merchant names wrap instead of overflowing the row. */
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 .txn-amount {
   font-variant-numeric: tabular-nums;
@@ -286,6 +292,55 @@ select:focus {
 .category-option.selected {
   border-color: var(--accent);
   background: var(--accent-dark);
+}
+
+/* Expandable recurring-series row. */
+.series-row {
+  border-bottom: 1px solid var(--border);
+}
+.series-row:last-child {
+  border-bottom: 0;
+}
+.series-toggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  width: auto;
+  color: inherit;
+  text-align: left;
+  gap: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+/* Filter chips (multi-select categories + Misc). */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 16px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: auto;
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.chip.on {
+  background: var(--accent-dark);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chip.clear {
+  background: transparent;
+  color: var(--muted);
 }
 
 /* Color swatch identifying a category (replaces emoji). */

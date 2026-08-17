@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/bemeek-io/crewmate/internal/crewfamily"
 	"github.com/bemeek-io/crewmate/internal/crypto"
 	"github.com/bemeek-io/crewmate/internal/httpx"
 	"github.com/bemeek-io/crewmate/internal/store"
@@ -215,10 +216,20 @@ func (h *Handlers) finalize(ctx context.Context, w http.ResponseWriter, r *http.
 		httpx.Error(w, http.StatusBadGateway, "crew_error", "could not load your Crew profile")
 		return
 	}
-	u, err := h.Store.UpsertUser(ctx, cu.ID, cu.FirstName, cu.LastName)
+	// Crew's own household ID lets a second member land in the same crewmate
+	// family automatically. Best effort — an empty result just means they'll
+	// use an invite code instead.
+	crewFamilyID := crewfamily.FetchCrewFamilyID(ctx, client)
+
+	u, err := h.Store.UpsertUser(ctx, cu.ID, cu.FirstName, cu.LastName, crewFamilyID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not save user")
 		return
+	}
+	if joined, err := h.Store.AutoJoinByCrewFamily(ctx, u.ID, crewFamilyID); err != nil {
+		h.Log.Warn("crew family auto-join", zap.Error(err))
+	} else if joined != uuid.Nil {
+		h.Log.Info("auto-joined crew family", zap.String("family", joined.String()))
 	}
 	_, err = h.Store.UpsertConnection(ctx, u.ID, func(connID uuid.UUID) ([]byte, error) {
 		return h.Box.Encrypt([]byte(client.Token()), connID[:])

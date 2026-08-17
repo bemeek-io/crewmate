@@ -50,7 +50,8 @@ func (h *Handlers) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	if !httpx.Decode(w, r, &req) {
 		return
 	}
-	if err := h.Service.Store.DeletePushSubscriptionByEndpoint(r.Context(), req.Endpoint); err != nil {
+	if err := h.Service.Store.DeletePushSubscriptionForUser(r.Context(),
+		auth.UserID(r.Context()), req.Endpoint); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not delete subscription")
 		return
 	}

@@ -7,26 +7,33 @@ import (
 	"github.com/google/uuid"
 )
 
-// WriteJob is a pending note write against Crew. Only the replica holding a
-// connection's lease owns its Crew client, so any component that wants to set
-// a note enqueues here and the holder performs the write.
+// Write job kinds. Each names an action only the connection's lease holder can
+// perform, because only that replica owns the Crew client.
+const (
+	WriteNote           = "note"            // set a transaction's note (its category)
+	WriteCardSubaccount = "card_subaccount" // move a debit card to another pocket
+)
+
+// WriteJob is a pending mutation against Crew. Any component that wants to
+// change something in Crew enqueues here; the lease holder performs it.
 type WriteJob struct {
 	ID           uuid.UUID
 	ConnectionID uuid.UUID
-	CrewTxnID    string
-	Note         string
+	Kind         string
+	TargetID     string // transaction ID, or debit card ID
+	Value        string // note text, or subaccount ID
 	Attempts     int
 }
 
-// EnqueueNoteWrite queues a note write, superseding any pending write for the
-// same transaction (last request wins).
-func (s *Store) EnqueueNoteWrite(ctx context.Context, connID uuid.UUID, crewTxnID, note string) error {
+// EnqueueWrite queues a mutation, superseding any pending write for the same
+// target (last request wins).
+func (s *Store) EnqueueWrite(ctx context.Context, connID uuid.UUID, kind, targetID, value string) error {
 	_, err := s.Pool.Exec(ctx, `
-		INSERT INTO crew_write_jobs (connection_id, crew_txn_id, note)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (connection_id, crew_txn_id)
-		DO UPDATE SET note = EXCLUDED.note, attempts = 0, last_error = '', run_after = now()`,
-		connID, crewTxnID, note)
+		INSERT INTO crew_write_jobs (connection_id, kind, target_id, value)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (connection_id, kind, target_id)
+		DO UPDATE SET value = EXCLUDED.value, attempts = 0, last_error = '', run_after = now()`,
+		connID, kind, targetID, value)
 	if err != nil {
 		return err
 	}
@@ -35,10 +42,15 @@ func (s *Store) EnqueueNoteWrite(ctx context.Context, connID uuid.UUID, crewTxnI
 	return nil
 }
 
+// EnqueueNoteWrite queues a transaction's category (stored as its Crew note).
+func (s *Store) EnqueueNoteWrite(ctx context.Context, connID uuid.UUID, crewTxnID, note string) error {
+	return s.EnqueueWrite(ctx, connID, WriteNote, crewTxnID, note)
+}
+
 // TakeWriteJobs returns due jobs for a connection the caller holds.
 func (s *Store) TakeWriteJobs(ctx context.Context, connID uuid.UUID, limit int) ([]WriteJob, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, connection_id, crew_txn_id, note, attempts
+		SELECT id, connection_id, kind, target_id, value, attempts
 		FROM crew_write_jobs
 		WHERE connection_id = $1 AND run_after <= now()
 		ORDER BY run_after
@@ -50,7 +62,7 @@ func (s *Store) TakeWriteJobs(ctx context.Context, connID uuid.UUID, limit int) 
 	var out []WriteJob
 	for rows.Next() {
 		var j WriteJob
-		if err := rows.Scan(&j.ID, &j.ConnectionID, &j.CrewTxnID, &j.Note, &j.Attempts); err != nil {
+		if err := rows.Scan(&j.ID, &j.ConnectionID, &j.Kind, &j.TargetID, &j.Value, &j.Attempts); err != nil {
 			return nil, err
 		}
 		out = append(out, j)
@@ -79,30 +91,6 @@ func (s *Store) FailWriteJob(ctx context.Context, id uuid.UUID, attempts int, ca
 		SET attempts = attempts + 1, last_error = $2, run_after = now() + $3
 		WHERE id = $1`, id, truncate(cause, 500), backoff)
 	return err
-}
-
-// PendingWriteNotes returns the notes queued for a set of transactions, so the
-// UI can show a category optimistically while the Crew write is in flight.
-func (s *Store) PendingWriteNotes(ctx context.Context, connIDs []uuid.UUID, crewTxnIDs []string) (map[string]string, error) {
-	if len(crewTxnIDs) == 0 {
-		return nil, nil
-	}
-	rows, err := s.Pool.Query(ctx, `
-		SELECT crew_txn_id, note FROM crew_write_jobs
-		WHERE connection_id = ANY($1) AND crew_txn_id = ANY($2)`, connIDs, crewTxnIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make(map[string]string)
-	for rows.Next() {
-		var id, note string
-		if err := rows.Scan(&id, &note); err != nil {
-			return nil, err
-		}
-		out[id] = note
-	}
-	return out, rows.Err()
 }
 
 func truncate(s string, n int) string {

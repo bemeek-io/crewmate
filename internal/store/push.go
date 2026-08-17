@@ -28,8 +28,21 @@ func (s *Store) UpsertPushSubscription(ctx context.Context, userID uuid.UUID, en
 	return err
 }
 
+// DeletePushSubscriptionByEndpoint is the unscoped prune used when a push
+// gateway answers 404/410 — at that point the endpoint is dead for everyone and
+// there is no caller to scope it to. HTTP handlers must use
+// DeletePushSubscriptionForUser instead.
 func (s *Store) DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error {
 	_, err := s.Pool.Exec(ctx, `DELETE FROM push_subscriptions WHERE endpoint = $1`, endpoint)
+	return err
+}
+
+// DeletePushSubscriptionForUser unsubscribes one of the caller's own devices.
+// Scoping by user_id means knowing someone else's endpoint URL is not enough to
+// silence their notifications.
+func (s *Store) DeletePushSubscriptionForUser(ctx context.Context, userID uuid.UUID, endpoint string) error {
+	_, err := s.Pool.Exec(ctx,
+		`DELETE FROM push_subscriptions WHERE endpoint = $2 AND user_id = $1`, userID, endpoint)
 	return err
 }
 

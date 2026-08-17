@@ -112,30 +112,24 @@ export default function Recurring() {
     const expanded = open === s.id;
     return (
       <div key={s.id} className="series-row">
-        <div className="row spread" style={{ padding: "10px 0" }}>
-          <button
-            className="row grow series-toggle"
-            onClick={() => setOpen(expanded ? null : s.id)}
-            aria-expanded={expanded}
-          >
-            <span className="icon-muted" style={{ lineHeight: 0 }}>
-              {expanded ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
+        {/* Title on its own line, every action on the next — otherwise the
+            label chips and Dismiss wrap against each other on a phone. */}
+        <button
+          className="row series-toggle"
+          style={{ width: "100%", padding: "12px 0 8px" }}
+          onClick={() => setOpen(expanded ? null : s.id)}
+          aria-expanded={expanded}
+        >
+          <span className="icon-muted" style={{ lineHeight: 0 }}>
+            {expanded ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
+          </span>
+          <span className="grow">
+            <span className="txn-title">{s.merchant_key}</span>
+            <span className="muted small" style={{ display: "block" }}>
+              {summarize(s)}
             </span>
-            <span className="grow">
-              <span className="txn-title">{s.merchant_key}</span>
-              <span className="muted small" style={{ display: "block" }}>
-                {summarize(s)}
-              </span>
-            </span>
-          </button>
-          <button
-            className="btn-small btn-secondary"
-            style={{ width: "auto" }}
-            onClick={() => dismiss.mutate({ id: s.id, dismissed: !s.dismissed })}
-          >
-            {s.dismissed ? "Restore" : "Dismiss"}
-          </button>
-        </div>
+          </span>
+        </button>
         <div className="chips" style={{ margin: "0 0 10px 26px" }}>
           {LABELS.map((l) => (
             <button
@@ -148,12 +142,18 @@ export default function Recurring() {
               {l.name}
             </button>
           ))}
-          {s.label_system_key && (
-            <span className="muted small" style={{ alignSelf: "center" }}>
-              future charges categorized automatically
-            </span>
-          )}
+          <button
+            className="chip clear"
+            onClick={() => dismiss.mutate({ id: s.id, dismissed: !s.dismissed })}
+          >
+            {s.dismissed ? "Restore" : "Dismiss"}
+          </button>
         </div>
+        {s.label_system_key && (
+          <p className="muted small" style={{ margin: "-4px 0 10px 26px" }}>
+            Future charges are categorized automatically.
+          </p>
+        )}
         {expanded && <SeriesDetail id={s.id} />}
       </div>
     );

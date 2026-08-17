@@ -21,19 +21,28 @@ export default function Transactions() {
 
   // Local input state so typing stays responsive; the URL (and the request)
   // follows a short debounce behind it.
+  //
+  // The debounced write MUST use the functional form of setParams. Building it
+  // from a captured `params` reads a snapshot from whenever `term` last
+  // changed, so tapping a filter chip mid-debounce would be silently undone.
   const [term, setTerm] = useState(urlQuery);
   useEffect(() => setTerm(urlQuery), [urlQuery]);
   useEffect(() => {
     if (term === urlQuery) return;
     const t = setTimeout(() => {
-      const next = new URLSearchParams(params);
-      if (term.trim()) next.set("q", term.trim());
-      else next.delete("q");
-      setParams(next, { replace: true });
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (term.trim()) next.set("q", term.trim());
+          else next.delete("q");
+          return next;
+        },
+        { replace: true }
+      );
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [term]);
+  }, [term, urlQuery]);
 
   const categories = useQuery({
     queryKey: ["categories"],
@@ -58,10 +67,16 @@ export default function Transactions() {
   const txns = query.data?.pages.flatMap((p) => p.transactions) ?? [];
   const filtersActive = uncategorized || selected.length > 0 || !!urlQuery;
 
+  // Same reasoning as the debounce above: always derive from the latest params.
   function update(fn: (p: URLSearchParams) => void) {
-    const next = new URLSearchParams(params);
-    fn(next);
-    setParams(next, { replace: true });
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        fn(next);
+        return next;
+      },
+      { replace: true }
+    );
   }
 
   function toggleCategory(id: string) {

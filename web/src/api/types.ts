@@ -21,11 +21,24 @@ export interface Account {
   subaccounts: Subaccount[] | null;
 }
 
+export interface Card {
+  id: string;
+  name: string;
+  last_four: string;
+  status: string;
+  form_factor: string;
+  frozen_status: string;
+  /** The pocket this card's spend is drawn from. */
+  subaccount_id: string;
+  subaccount_name: string;
+}
+
 export interface MemberAccounts {
   user_id: string;
   first_name: string;
   fetched_at: string;
   accounts: Account[] | null;
+  cards: Card[] | null;
 }
 
 export interface Txn {

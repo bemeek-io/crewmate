@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/bemeek-io/crewmate/internal/categorize"
+	"github.com/bemeek-io/crewmate/internal/crewcards"
 	"github.com/bemeek-io/crewmate/internal/crypto"
 	"github.com/bemeek-io/crewmate/internal/push"
 	"github.com/bemeek-io/crewmate/internal/store"
@@ -337,7 +338,21 @@ func (r *Runner) refreshSnapshot(ctx context.Context, client *crew.Client, log *
 		}
 		return
 	}
-	payload, err := json.Marshal(map[string]any{"accounts": cu.Accounts})
+	// Cards ride along in the snapshot so the dashboard can show which pocket
+	// each card spends from without a live Crew call.
+	cards, err := crewcards.Fetch(ctx, client)
+	if err != nil {
+		log.Warn("card fetch failed; snapshot keeps previous cards", zap.Error(err))
+		if prev, perr := r.Store.GetSnapshot(ctx, r.Conn.ID); perr == nil && prev != nil {
+			var old struct {
+				Cards []crewcards.Card `json:"cards"`
+			}
+			if json.Unmarshal(prev.Payload, &old) == nil {
+				cards = old.Cards
+			}
+		}
+	}
+	payload, err := json.Marshal(map[string]any{"accounts": cu.Accounts, "cards": cards})
 	if err != nil {
 		return
 	}

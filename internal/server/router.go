@@ -90,6 +90,7 @@ func NewRouter(d Deps) http.Handler {
 			fr.With(d.Family.RequireAdmin).Delete("/family/members/{userID}", d.Family.RemoveMember)
 
 			fr.Get("/accounts", d.Crew.Accounts)
+			fr.Put("/cards/{cardID}/pocket", d.Crew.MoveCardPocket)
 
 			fr.Get("/transactions", d.Txns.List)
 			fr.Get("/transactions/{id}", d.Txns.Get)

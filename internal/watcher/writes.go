@@ -6,6 +6,9 @@ import (
 
 	crew "github.com/bemeek-io/go-crew"
 	"go.uber.org/zap"
+
+	"github.com/bemeek-io/crewmate/internal/crewcards"
+	"github.com/bemeek-io/crewmate/internal/store"
 )
 
 const (
@@ -29,10 +32,16 @@ func (r *Runner) drainWriteJobs(ctx context.Context, client *crew.Client, log *z
 		if ctx.Err() != nil {
 			return
 		}
-		_, err := client.UpdateCashTransaction(ctx, crew.UpdateCashTransactionInput{
-			CashTransactionID: j.CrewTxnID,
-			Note:              j.Note,
-		})
+		var err error
+		switch j.Kind {
+		case store.WriteCardSubaccount:
+			err = crewcards.MovePocket(ctx, client, j.TargetID, j.Value)
+		default:
+			_, err = client.UpdateCashTransaction(ctx, crew.UpdateCashTransactionInput{
+				CashTransactionID: j.TargetID,
+				Note:              j.Value,
+			})
+		}
 		if err != nil {
 			// An auth failure is the session's problem, not this job's: leave
 			// the job queued and let the session loop handle re-login.
@@ -40,16 +49,21 @@ func (r *Runner) drainWriteJobs(ctx context.Context, client *crew.Client, log *z
 				r.setLastErr(err)
 				return
 			}
-			log.Warn("crew note write failed",
-				zap.String("crew_txn", j.CrewTxnID), zap.Int("attempts", j.Attempts), zap.Error(err))
+			log.Warn("crew write failed", zap.String("kind", j.Kind),
+				zap.String("target", j.TargetID), zap.Int("attempts", j.Attempts), zap.Error(err))
 			if ferr := r.Store.FailWriteJob(ctx, j.ID, j.Attempts, err.Error(), maxWriteAttempts); ferr != nil {
 				log.Warn("record write failure", zap.Error(ferr))
 			}
 			continue
 		}
 		// Mirror into the local cache so the UI reflects it before the next poll.
-		if err := r.Store.SetLocalNote(ctx, r.Conn.ID, j.CrewTxnID, j.Note); err != nil {
-			log.Warn("mirror note locally", zap.Error(err))
+		if j.Kind == store.WriteNote {
+			if err := r.Store.SetLocalNote(ctx, r.Conn.ID, j.TargetID, j.Value); err != nil {
+				log.Warn("mirror note locally", zap.Error(err))
+			}
+		} else {
+			// A card move changes the snapshot, not a transaction row.
+			r.RequestRefresh()
 		}
 		if err := r.Store.DeleteWriteJob(ctx, j.ID); err != nil {
 			log.Warn("delete write job", zap.Error(err))

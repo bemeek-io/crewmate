@@ -107,6 +107,7 @@ func (h *Handlers) Accounts(w http.ResponseWriter, r *http.Request) {
 			"first_name": s.FirstName,
 			"fetched_at": s.FetchedAt,
 			"accounts":   payload["accounts"],
+			"cards":      payload["cards"],
 		})
 		if time.Since(s.FetchedAt) > snapshotStaleAfter {
 			// Ask the holder for a refresh; served data stays as-is this call.

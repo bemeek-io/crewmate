@@ -2,6 +2,7 @@
 package config
 
 import (
+	"crypto/ecdh"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -30,6 +31,9 @@ type Config struct {
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
 	VAPIDSubject    string // mailto: or https:
+	// VAPIDKeyError is set when the two keys aren't a matching pair, which
+	// makes every push 403. Empty when they're fine.
+	VAPIDKeyError string
 
 	SessionTTL               time.Duration
 	WatchInterval            time.Duration
@@ -99,6 +103,13 @@ func Load() (*Config, error) {
 	if !strings.HasPrefix(c.VAPIDSubject, "mailto:") && !strings.HasPrefix(c.VAPIDSubject, "https:") {
 		return nil, fmt.Errorf("VAPID_SUBJECT must start with mailto: or https:")
 	}
+	// Not fatal: a bad pair breaks push and nothing else, and killing the
+	// process would take balances and transactions down with it — and, on an
+	// automated deploy, crash-loop production. Recorded instead, logged loudly
+	// at startup and reported by /api/push/test.
+	if err := checkVAPIDPair(c.VAPIDPublicKey, c.VAPIDPrivateKey); err != nil {
+		c.VAPIDKeyError = err.Error()
+	}
 
 	if c.LeaseTTL < 15*time.Second {
 		return nil, fmt.Errorf("LEASE_TTL must be at least 15s")
@@ -129,6 +140,35 @@ func getint(k string, def int) int {
 		}
 	}
 	return def
+}
+
+// checkVAPIDPair verifies the two VAPID keys are actually a pair.
+//
+// Browsers subscribe using the public key the server serves, and the server
+// signs with the private one. If they come from different key generations,
+// every push is rejected with 403 and nothing about it looks wrong: the keys
+// are individually valid, the subscription registers fine, and re-subscribing
+// changes nothing because the mismatch is server-side. Catching it at boot
+// costs one scalar multiplication.
+//
+// Encoding follows webpush-go: the private key is the raw P-256 scalar and the
+// public key is the uncompressed point, both unpadded base64url.
+func checkVAPIDPair(pub, priv string) error {
+	privBytes, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(priv))
+	if err != nil {
+		return fmt.Errorf("VAPID_PRIVATE_KEY is not valid unpadded base64url: %w", err)
+	}
+	key, err := ecdh.P256().NewPrivateKey(privBytes)
+	if err != nil {
+		return fmt.Errorf("VAPID_PRIVATE_KEY is not a valid P-256 key: %w", err)
+	}
+	derived := base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
+	if derived != strings.TrimSpace(pub) {
+		return fmt.Errorf(
+			"VAPID_PUBLIC_KEY does not match VAPID_PRIVATE_KEY — every push would be rejected "+
+				"with 403. The public key for this private key is: %s", derived)
+	}
+	return nil
 }
 
 // isLoopback reports whether a hostname is the local machine. Browsers treat

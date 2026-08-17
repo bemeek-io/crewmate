@@ -45,11 +45,7 @@ export default function Settings() {
             "icon, and turn notifications on there."
         );
       } else if (res.problem) {
-        setDiagnosis(
-          `The push service rejected it (${res.problem}). A 403 usually means the server's ` +
-            `VAPID keys changed since this device subscribed — turn notifications off and on ` +
-            `again to re-register.`
-        );
+        setDiagnosis(`The push service rejected it — ${res.problem}`);
       } else if (!res.accepted) {
         setDiagnosis("Accepted by no device. Turn notifications off and on again to re-register.");
       } else {

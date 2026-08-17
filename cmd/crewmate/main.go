@@ -90,6 +90,13 @@ func run() error {
 	}
 	log.Info("database ready")
 
+	// Not fatal — push breaks, the rest of the app doesn't — but every send
+	// would 403, so it must not pass quietly.
+	if cfg.VAPIDKeyError != "" {
+		log.Error("VAPID keys are misconfigured; push will fail",
+			zap.String("detail", cfg.VAPIDKeyError))
+	}
+
 	box, err := crypto.NewBox(cfg.CrewTokenEncKey)
 	if err != nil {
 		return err

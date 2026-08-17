@@ -4,7 +4,10 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/google/uuid"
@@ -106,6 +109,22 @@ func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, paylo
 		return SendResult{Err: err.Error()}
 	}
 	defer resp.Body.Close()
+	// Push gateways explain a rejection in the body — Apple returns things like
+	// BadJwtToken, FCM a JSON error. Without it a 403 is unactionable, so it's
+	// captured (bounded) and reported rather than discarded.
+	detail := ""
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		detail = strings.TrimSpace(string(body))
+		host := "push service"
+		if u, err := url.Parse(sub.Endpoint); err == nil && u.Host != "" {
+			host = u.Host
+		}
+		s.Log.Warn("web push rejected",
+			zap.Int("status", resp.StatusCode), zap.String("host", host),
+			zap.String("body", detail))
+		detail = host + ": " + detail
+	}
 	switch resp.StatusCode {
 	case http.StatusNotFound, http.StatusGone:
 		// Subscription is dead — prune it.
@@ -114,10 +133,6 @@ func (s *Service) sendOne(ctx context.Context, sub store.PushSubscription, paylo
 		} else {
 			s.Log.Info("pruned dead push subscription", zap.String("endpoint", sub.Endpoint))
 		}
-	default:
-		if resp.StatusCode >= 400 {
-			s.Log.Warn("web push non-success", zap.Int("status", resp.StatusCode))
-		}
 	}
-	return SendResult{Status: resp.StatusCode}
+	return SendResult{Status: resp.StatusCode, Err: detail}
 }

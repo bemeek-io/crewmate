@@ -81,16 +81,19 @@ func (h *Handlers) Test(w http.ResponseWriter, r *http.Request) {
 	accepted, problem := 0, ""
 	for _, res := range results {
 		switch {
-		case res.Err != "":
-			problem = res.Err
 		case res.Status >= 200 && res.Status < 300:
 			accepted++
+		case res.Status == 0:
+			problem = res.Err // never reached the gateway
 		default:
-			problem = http.StatusText(res.Status)
-			if problem == "" {
-				problem = "HTTP " + strconv.Itoa(res.Status)
+			problem = strconv.Itoa(res.Status)
+			if txt := http.StatusText(res.Status); txt != "" {
+				problem += " " + txt
 			}
-			problem = strconv.Itoa(res.Status) + " " + problem
+			// The gateway's own words are the only thing that says why.
+			if res.Err != "" {
+				problem += " — " + res.Err
+			}
 		}
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{

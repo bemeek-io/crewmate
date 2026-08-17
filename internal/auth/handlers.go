@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	crew "github.com/bemeek-io/go-crew"
@@ -226,10 +227,19 @@ func (h *Handlers) finalize(ctx context.Context, w http.ResponseWriter, r *http.
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not save user")
 		return
 	}
-	if joined, err := h.Store.AutoJoinByCrewFamily(ctx, u.ID, crewFamilyID); err != nil {
-		h.Log.Warn("crew family auto-join", zap.Error(err))
-	} else if joined != uuid.Nil {
-		h.Log.Info("auto-joined crew family", zap.String("family", joined.String()))
+	// Signing in is the whole of setup: the household comes from Crew, so
+	// there is no family to name and no invite code to type.
+	famName := strings.TrimSpace(cu.LastName)
+	if famName != "" {
+		famName += " family"
+	}
+	if famID, err := h.Store.EnsureFamily(ctx, u.ID, crewFamilyID, famName); err != nil {
+		h.Log.Error("ensure family", zap.Error(err))
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not set up your family")
+		return
+	} else {
+		h.Log.Info("family ready", zap.String("family", famID.String()),
+			zap.Bool("from_crew", crewFamilyID != ""))
 	}
 	_, err = h.Store.UpsertConnection(ctx, u.ID, func(connID uuid.UUID) ([]byte, error) {
 		return h.Box.Encrypt([]byte(client.Token()), connID[:])

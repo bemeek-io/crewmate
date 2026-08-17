@@ -17,7 +17,6 @@ import {
   ChartIcon,
 } from "./components/Icons";
 import Login from "./pages/Login";
-import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions";
 import TransactionDetail from "./pages/TransactionDetail";
@@ -132,9 +131,13 @@ export default function App() {
     return <Navigate to="/login" replace />;
   }
 
+  // The family comes from the Crew household at sign-in, so there is no setup
+  // step. A session predating that (or one whose family creation failed) is
+  // repaired by signing in again, which is what the redirect is for — there is
+  // nothing for the user to fill in.
   const hasFamily = !!me.data?.family_id;
-  if (!hasFamily && location.pathname !== "/onboarding") {
-    return <Navigate to="/onboarding" replace />;
+  if (!hasFamily) {
+    return <Navigate to="/login" replace />;
   }
 
   return (
@@ -148,7 +151,6 @@ export default function App() {
         )}
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/transactions/:id" element={<TransactionDetail />} />
           <Route path="/categories" element={<Categories />} />

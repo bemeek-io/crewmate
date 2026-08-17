@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,9 +52,97 @@ func (s *Store) GetUser(ctx context.Context, id uuid.UUID) (*User, error) {
 	return &u, nil
 }
 
+// EnsureFamily guarantees the user belongs to a family, so signing in is the
+// only setup step there is — crewmate never asks anyone to name a household or
+// type an invite code.
+//
+// The family is keyed on the Crew household ID, so the first member to sign in
+// creates it and everyone after joins the same one and inherits the shared
+// categories. A user whose Crew household is unknown gets a family of their
+// own, which an invite code can still be used to grow.
+//
+// Returns the family the user is in.
+func (s *Store) EnsureFamily(ctx context.Context, userID uuid.UUID, crewFamilyID, name string) (uuid.UUID, error) {
+	// Two members of the same household signing in at once both try to create
+	// it; the unique index on crew_family_id decides, and the loser re-reads.
+	for attempt := 0; attempt < 2; attempt++ {
+		id, err := s.ensureFamilyOnce(ctx, userID, crewFamilyID, name)
+		if err == nil {
+			return id, nil
+		}
+		if !isUniqueViolation(err) {
+			return uuid.Nil, err
+		}
+	}
+	return uuid.Nil, fmt.Errorf("could not resolve family for user %s", userID)
+}
+
+func (s *Store) ensureFamilyOnce(ctx context.Context, userID uuid.UUID, crewFamilyID, name string) (uuid.UUID, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var existing uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT family_id FROM family_members WHERE user_id = $1`, userID).Scan(&existing)
+	if err == nil {
+		return existing, nil // already placed
+	}
+	if err != pgx.ErrNoRows {
+		return uuid.Nil, err
+	}
+
+	var familyID uuid.UUID
+	var crewKey *string
+	if crewFamilyID != "" {
+		crewKey = &crewFamilyID
+		err = tx.QueryRow(ctx, `SELECT id FROM families WHERE crew_family_id = $1`, crewFamilyID).Scan(&familyID)
+		if err != nil && err != pgx.ErrNoRows {
+			return uuid.Nil, err
+		}
+	} else {
+		err = pgx.ErrNoRows
+	}
+
+	created := false
+	if err == pgx.ErrNoRows {
+		if name == "" {
+			name = "Family"
+		}
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO families (name, crew_family_id) VALUES ($1, $2)
+			RETURNING id`, name, crewKey).Scan(&familyID); err != nil {
+			return uuid.Nil, err
+		}
+		created = true
+	}
+
+	// Whoever creates the household administers it; later arrivals are members.
+	role := "member"
+	if created {
+		role = "admin"
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING`, familyID, userID, role); err != nil {
+		return uuid.Nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, err
+	}
+	if created {
+		// Subscription and Loan Payment must exist before the first charge
+		// lands, or there'd be nothing to label it with.
+		if err := s.EnsureSystemCategories(ctx, familyID); err != nil {
+			return uuid.Nil, err
+		}
+	}
+	return familyID, nil
+}
+
 // AutoJoinByCrewFamily puts a user into the crewmate family already linked to
-// their Crew household, if one exists and they aren't in a family yet. This is
-// what lets a second member sign in and immediately share categories.
+// their Crew household, if one exists and they aren't in a family yet.
 // Returns the family joined, or uuid.Nil when there was nothing to join.
 func (s *Store) AutoJoinByCrewFamily(ctx context.Context, userID uuid.UUID, crewFamilyID string) (uuid.UUID, error) {
 	if crewFamilyID == "" {

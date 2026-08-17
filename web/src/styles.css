@@ -173,6 +173,9 @@ select:focus {
   font-size: 1.6rem;
   letter-spacing: 0.5em;
   font-variant-numeric: tabular-nums;
+  /* The instruction above it needs room; the oversized type otherwise sits
+     right against the sentence explaining what to type. */
+  margin-top: 14px;
 }
 
 /* Bottom tab bar */

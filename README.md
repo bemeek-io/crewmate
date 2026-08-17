@@ -17,6 +17,10 @@ What it does:
   that merchant last got (history is the cache — including categories you set in the Crew app);
   a merchant nobody has ever categorized goes to Claude Haiku once. A note you wrote by hand is
   never overwritten automatically.
+- **Two-way with the Crew app** — type `Subscription` into a transaction's note in Crew and
+  crewmate picks it up. If the note doesn't match a category, crewmate offers to add it as one
+  (labeling every transaction carrying that note at once) or to ignore it, for genuinely
+  personal notes. Anything without a recognized category reads as **Misc**.
 - **Subscription detection** — recurring charges (steady merchant + amount + cadence) are
   detected and surfaced.
 - **Families** — one deployment serves many families; invite codes (single-use, 48 h) share

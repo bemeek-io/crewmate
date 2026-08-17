@@ -49,6 +49,10 @@ export interface Txn {
   category_name: string | null;
   /** True when the note is a hand-written annotation, not a category. */
   has_user_note: boolean;
+  /** The family chose not to treat this note as a category. */
+  note_ignored: boolean;
+  /** The note could be promoted into the category list. */
+  can_add_category: boolean;
   recurring_id: string | null;
   merchant_key?: string;
 }
@@ -71,6 +75,12 @@ export interface RecurringSeries {
   occurrence_count: number;
   is_subscription: boolean;
   dismissed: boolean;
+}
+
+export interface UnmatchedNote {
+  note: string;
+  count: number;
+  last_seen: string;
 }
 
 export interface FamilyInfo {

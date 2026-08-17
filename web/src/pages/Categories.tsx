@@ -1,15 +1,23 @@
 import { FormEvent, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { get, post, patch, del, ApiError } from "../api/client";
-import type { Category } from "../api/types";
+import { useQuery } from "@tanstack/react-query";
+import { get } from "../api/client";
+import {
+  useCreateCategory,
+  useRenameCategory,
+  useDeleteCategory,
+  useIgnoreNote,
+  useUnignoreNote,
+} from "../api/categories";
+import type { Category, UnmatchedNote } from "../api/types";
 
 const EMOJI_SUGGESTIONS = ["🛒", "🍔", "⛽", "🏠", "🎬", "👕", "💊", "🎁", "✈️", "📱", "🐾", "🎓"];
 
+/** True while a category exists only in the optimistic cache. */
+const isPending = (c: Category) => c.id.startsWith("pending-");
+
 export default function Categories() {
-  const qc = useQueryClient();
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("");
-  const [error, setError] = useState("");
   const [editing, setEditing] = useState<Category | null>(null);
   const [editName, setEditName] = useState("");
 
@@ -17,53 +25,37 @@ export default function Categories() {
     queryKey: ["categories"],
     queryFn: () => get<{ categories: Category[] }>("/api/categories"),
   });
-
-  const invalidate = async () => {
-    await qc.invalidateQueries({ queryKey: ["categories"] });
-    await qc.invalidateQueries({ queryKey: ["transactions"] });
-  };
-
-  const create = useMutation({
-    mutationFn: () => post("/api/categories", { name: name.trim(), emoji, color: "" }),
-    onSuccess: async () => {
-      setName("");
-      setEmoji("");
-      setError("");
-      await invalidate();
-    },
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Could not create"),
+  const unmatched = useQuery({
+    queryKey: ["notes", "unmatched"],
+    queryFn: () => get<{ notes: UnmatchedNote[]; ignored: string[] }>("/api/notes/unmatched"),
   });
 
-  const rename = useMutation({
-    mutationFn: (c: Category) =>
-      patch<{ notes_requeued: number }>(`/api/categories/${c.id}`, {
-        name: editName.trim(),
-        emoji: c.emoji,
-        color: c.color,
-      }),
-    onSuccess: async () => {
-      setEditing(null);
-      await invalidate();
-    },
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Could not rename"),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => del(`/api/categories/${id}`),
-    onSuccess: invalidate,
-  });
+  const create = useCreateCategory();
+  const rename = useRenameCategory();
+  const remove = useDeleteCategory();
+  const ignore = useIgnoreNote();
+  const unignore = useUnignoreNote();
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (name.trim()) create.mutate();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    // Optimistic: the row appears before the request resolves.
+    create.mutate({ name: trimmed, emoji });
+    setName("");
+    setEmoji("");
   }
+
+  const notes = unmatched.data?.notes ?? [];
+  const ignored = unmatched.data?.ignored ?? [];
 
   return (
     <>
       <h1>Categories</h1>
       <p className="muted small" style={{ marginBottom: 12 }}>
         Categories are saved here and shared with your family. Each transaction’s category is
-        stored in its note in Crew, so it shows up in the Crew app too.
+        stored in its note in Crew, so it shows up in the Crew app too — and anything you type
+        there syncs back here.
       </p>
 
       <div className="card">
@@ -76,7 +68,7 @@ export default function Categories() {
               maxLength={40}
               style={{ marginBottom: 0 }}
             />
-            <button className="btn-small" style={{ width: "auto" }} disabled={create.isPending}>
+            <button className="btn-small" style={{ width: "auto" }}>
               Add
             </button>
           </div>
@@ -93,10 +85,49 @@ export default function Categories() {
               </button>
             ))}
           </div>
-          {error && <div className="error">{error}</div>}
+          {create.isError && <div className="error">Could not add that category.</div>}
         </form>
       </div>
 
+      {notes.length > 0 && (
+        <>
+          <h2>Notes found in Crew</h2>
+          <p className="muted small" style={{ marginBottom: 10 }}>
+            These notes don’t match a category yet. Add one to start using it, or ignore it if
+            it’s just a personal note.
+          </p>
+          <div className="card">
+            {notes.map((n) => (
+              <div className="row spread" style={{ padding: "10px 0" }} key={n.note}>
+                <div className="grow">
+                  <div className="txn-title">{n.note}</div>
+                  <div className="muted small">
+                    on {n.count} transaction{n.count === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <div className="row" style={{ gap: 6 }}>
+                  <button
+                    className="btn-small"
+                    style={{ width: "auto" }}
+                    onClick={() => create.mutate({ name: n.note })}
+                  >
+                    Add category
+                  </button>
+                  <button
+                    className="btn-small btn-secondary"
+                    style={{ width: "auto" }}
+                    onClick={() => ignore.mutate(n.note)}
+                  >
+                    Ignore
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <h2>Your categories</h2>
       <div className="card">
         {(categories.data?.categories ?? []).map((c) =>
           editing?.id === c.id ? (
@@ -111,10 +142,13 @@ export default function Categories() {
               <button
                 className="btn-small"
                 style={{ width: "auto" }}
-                disabled={rename.isPending || !editName.trim()}
-                onClick={() => rename.mutate(c)}
+                disabled={!editName.trim()}
+                onClick={() => {
+                  rename.mutate({ category: c, name: editName.trim() });
+                  setEditing(null);
+                }}
               >
-                {rename.isPending ? "…" : "Save"}
+                Save
               </button>
               <button
                 className="btn-small btn-secondary"
@@ -126,7 +160,7 @@ export default function Categories() {
             </div>
           ) : (
             <div className="row spread" style={{ padding: "10px 0" }} key={c.id}>
-              <span style={{ fontWeight: 600 }}>
+              <span style={{ fontWeight: 600, opacity: isPending(c) ? 0.5 : 1 }}>
                 {c.emoji ? `${c.emoji} ` : ""}
                 {c.name}
               </span>
@@ -134,6 +168,9 @@ export default function Categories() {
                 <button
                   className="btn-small btn-secondary"
                   style={{ width: "auto" }}
+                  // Optimistic rows have a placeholder id until the server
+                  // responds; editing one would target a nonexistent record.
+                  disabled={isPending(c)}
                   onClick={() => {
                     setEditing(c);
                     setEditName(c.name);
@@ -144,10 +181,11 @@ export default function Categories() {
                 <button
                   className="btn-small btn-danger"
                   style={{ width: "auto" }}
+                  disabled={isPending(c)}
                   onClick={() => {
                     if (
                       confirm(
-                        `Delete "${c.name}"? Transactions keep their note in Crew but will show as uncategorized.`
+                        `Delete "${c.name}"? Transactions keep their note in Crew but will show as Misc.`
                       )
                     )
                       remove.mutate(c.id);
@@ -165,12 +203,28 @@ export default function Categories() {
           </p>
         )}
       </div>
+      <p className="muted small">
+        Renaming updates the note on past transactions in Crew too, so nothing loses its category.
+      </p>
 
-      {editing && (
-        <p className="muted small">
-          Renaming updates the note on past transactions in Crew too, so nothing loses its
-          category.
-        </p>
+      {ignored.length > 0 && (
+        <>
+          <h2>Ignored notes</h2>
+          <div className="card">
+            {ignored.map((n) => (
+              <div className="row spread" style={{ padding: "8px 0" }} key={n}>
+                <span className="muted">{n}</span>
+                <button
+                  className="btn-small btn-secondary"
+                  style={{ width: "auto" }}
+                  onClick={() => unignore.mutate(n)}
+                >
+                  Un-ignore
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </>
   );

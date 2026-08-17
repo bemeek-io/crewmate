@@ -38,8 +38,8 @@ export default function Dashboard() {
       {uncatCount > 0 && (
         <Link to="/transactions?uncategorized=1" style={{ textDecoration: "none" }}>
           <div className="banner">
-            🏷️ {uncatCount >= 20 ? "20+" : uncatCount} transaction{uncatCount === 1 ? "" : "s"} need
-            {uncatCount === 1 ? "s" : ""} a category — tap to review
+            🏷️ {uncatCount >= 20 ? "20+" : uncatCount} transaction{uncatCount === 1 ? "" : "s"} in
+            Misc — tap to categorize
           </div>
         </Link>
       )}

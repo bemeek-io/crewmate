@@ -43,9 +43,12 @@ func txnJSON(t *store.Transaction) map[string]any {
 		"note":          t.Note,
 		"category_id":   t.CategoryID,
 		"category_name": t.CategoryName,
-		// A note that names no category is the user's own annotation.
-		"has_user_note": t.Note != "" && t.CategoryID == nil,
-		"recurring_id":  t.RecurringID,
+		// A note that names no category is the user's own annotation; it can
+		// be promoted to a category unless they've chosen to ignore it.
+		"has_user_note":    t.Note != "" && t.CategoryID == nil,
+		"note_ignored":     t.NoteIgnored,
+		"can_add_category": t.Note != "" && t.CategoryID == nil && !t.NoteIgnored,
+		"recurring_id":     t.RecurringID,
 	}
 }
 

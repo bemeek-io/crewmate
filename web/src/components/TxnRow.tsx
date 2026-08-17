@@ -2,6 +2,16 @@ import { Link } from "react-router-dom";
 import { fmtCents } from "../api/client";
 import type { Txn } from "../api/types";
 
+/**
+ * A transaction's category is its Crew note matched against the family's
+ * category list. Anything that doesn't resolve reads as "Misc" — with the raw
+ * note shown when there is one, so a personal annotation stays visible.
+ */
+export function categoryLabel(txn: Txn): string {
+  if (txn.category_name) return txn.category_name;
+  return txn.note ? `Misc · ${txn.note}` : "Misc";
+}
+
 export default function TxnRow({ txn }: { txn: Txn }) {
   const initial = (txn.payee || "?").charAt(0).toUpperCase();
   return (
@@ -16,17 +26,8 @@ export default function TxnRow({ txn }: { txn: Txn }) {
             month: "short",
             day: "numeric",
           })}
-          {txn.pending && " · pending"}
-          {txn.category_name ? (
-            <> · {txn.category_name}</>
-          ) : txn.has_user_note ? (
-            <> · “{txn.note}”</>
-          ) : (
-            <>
-              {" "}
-              · <span className="pill warn">tap to categorize</span>
-            </>
-          )}
+          {txn.pending && " · pending"} · {categoryLabel(txn)}
+          {txn.can_add_category && " · new note"}
         </div>
       </div>
       <div className={`txn-amount ${txn.amount_cents > 0 ? "pos" : "neg"}`}>

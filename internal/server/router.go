@@ -100,6 +100,10 @@ func NewRouter(d Deps) http.Handler {
 			fr.Patch("/categories/{id}", d.Categories.Update)
 			fr.Delete("/categories/{id}", d.Categories.Delete)
 
+			fr.Get("/notes/unmatched", d.Categories.Unmatched)
+			fr.Post("/notes/ignore", d.Categories.Ignore)
+			fr.Delete("/notes/ignore", d.Categories.Unignore)
+
 			fr.Get("/recurring", d.Txns.ListRecurring)
 			fr.Patch("/recurring/{id}", d.Txns.PatchRecurring)
 		})

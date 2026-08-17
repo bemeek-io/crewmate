@@ -50,7 +50,7 @@ export default function Transactions() {
             setParams(next, { replace: true });
           }}
         >
-          Needs category
+          Misc only
         </button>
         <select
           style={{ width: "auto", flex: 1, marginBottom: 0 }}

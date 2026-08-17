@@ -33,6 +33,7 @@ type Transaction struct {
 	Note           string
 	CategoryID     *uuid.UUID // derived from Note
 	CategoryName   *string    // derived from Note
+	NoteIgnored    bool       // note deliberately not treated as a category
 	RecurringID    *uuid.UUID
 	NotifiedAt     *time.Time
 }
@@ -104,27 +105,42 @@ func (s *Store) SetLocalNote(ctx context.Context, connID uuid.UUID, crewTxnID, n
 	return err
 }
 
-// The category join derives CategoryID/CategoryName from the note text.
+// The category join derives CategoryID/CategoryName from the note text; the
+// ignored_notes join marks notes the family has chosen not to treat as a
+// category, so the UI stops offering to promote them.
 const txnFrom = `
 	FROM transactions t
 	LEFT JOIN categories c
-	       ON c.family_id = t.family_id AND lower(c.name) = lower(t.note)`
+	       ON c.family_id = t.family_id AND lower(c.name) = lower(t.note)
+	LEFT JOIN ignored_notes i
+	       ON i.family_id = t.family_id AND i.note_key = lower(t.note)`
 
 const txnCols = `
 	t.id, t.family_id, t.connection_id, t.crew_txn_id, t.amount_cents, t.payee, t.merchant_key,
 	t.title, t.description, t.status, t.txn_type, t.mcc, t.image_url, t.subaccount_id,
 	t.subaccount_name, t.occurred_at, t.cleared_at, t.note, c.id, c.name,
-	t.recurring_id, t.notified_at`
+	(i.family_id IS NOT NULL) AS note_ignored, t.recurring_id, t.notified_at`
 
 func scanTxn(row pgx.Row) (*Transaction, error) {
 	var t Transaction
 	if err := row.Scan(&t.ID, &t.FamilyID, &t.ConnectionID, &t.CrewTxnID, &t.AmountCents, &t.Payee,
 		&t.MerchantKey, &t.Title, &t.Description, &t.Status, &t.TxnType, &t.MCC, &t.ImageURL,
 		&t.SubaccountID, &t.SubaccountName, &t.OccurredAt, &t.ClearedAt, &t.Note,
-		&t.CategoryID, &t.CategoryName, &t.RecurringID, &t.NotifiedAt); err != nil {
+		&t.CategoryID, &t.CategoryName, &t.NoteIgnored, &t.RecurringID, &t.NotifiedAt); err != nil {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// GetTransactionByCrewID looks a transaction up by its Crew identity, for the
+// holder-side sync paths that work in Crew's namespace.
+func (s *Store) GetTransactionByCrewID(ctx context.Context, connID uuid.UUID, crewTxnID string) (*Transaction, error) {
+	t, err := scanTxn(s.Pool.QueryRow(ctx,
+		`SELECT `+txnCols+txnFrom+` WHERE t.connection_id = $1 AND t.crew_txn_id = $2`, connID, crewTxnID))
+	if err == pgx.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	return t, err
 }
 
 // GetTransactionByID is for internal pipeline use only — HTTP handlers must

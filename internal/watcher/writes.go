@@ -35,7 +35,7 @@ func (r *Runner) drainWriteJobs(ctx context.Context, client *crew.Client, log *z
 		var err error
 		switch j.Kind {
 		case store.WriteCardSubaccount:
-			err = crewcards.MovePocket(ctx, client, j.TargetID, j.Value)
+			err = crewcards.MovePocket(ctx, client, j.Value)
 		default:
 			_, err = client.UpdateCashTransaction(ctx, crew.UpdateCashTransactionInput{
 				CashTransactionID: j.TargetID,

@@ -340,7 +340,7 @@ func (r *Runner) refreshSnapshot(ctx context.Context, client *crew.Client, log *
 	}
 	// Cards ride along in the snapshot so the dashboard can show which pocket
 	// each card spends from without a live Crew call.
-	cards, err := crewcards.Fetch(ctx, client)
+	cards, err := crewcards.Fetch(ctx, client, cu.Accounts)
 	if err != nil {
 		log.Warn("card fetch failed; snapshot keeps previous cards", zap.Error(err))
 		if prev, perr := r.Store.GetSnapshot(ctx, r.Conn.ID); perr == nil && prev != nil {

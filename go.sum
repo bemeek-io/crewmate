@@ -8,6 +8,8 @@ github.com/bemeek-io/go-crew v0.0.0-20260816221501-f21107fb3f9b h1:Er2xybMQR3v+h
 github.com/bemeek-io/go-crew v0.0.0-20260816221501-f21107fb3f9b/go.mod h1:9wR5xKkZ0jrfdeo/mjSsE2ppvEQjt9K8FqQuQPQP0Jc=
 github.com/bemeek-io/go-crew v0.0.0-20260817143800-365226fc6239 h1:bY/+HH5o/UGz4Jkhh5VSacT1LvJPITD/aTDnSlOcSz8=
 github.com/bemeek-io/go-crew v0.0.0-20260817143800-365226fc6239/go.mod h1:9wR5xKkZ0jrfdeo/mjSsE2ppvEQjt9K8FqQuQPQP0Jc=
+github.com/bemeek-io/go-crew v0.0.0-20260817172336-a726f1623ca5 h1:vYAcnYyR0UJV6Xp8MgI++UPqyQG28+DyNtRgERd7Rlw=
+github.com/bemeek-io/go-crew v0.0.0-20260817172336-a726f1623ca5/go.mod h1:9wR5xKkZ0jrfdeo/mjSsE2ppvEQjt9K8FqQuQPQP0Jc=
 github.com/buger/jsonparser v1.1.2 h1:frqHqw7otoVbk5M8LlE/L7HTnIq2v9RX6EJ48i9AxJk=
 github.com/buger/jsonparser v1.1.2/go.mod h1:6RYKKt7H4d4+iWqouImQ9R2FZql3VbhNgx27UK13J/0=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

@@ -1,4 +1,6 @@
-// Package categoriesapi serves category and merchant-rule CRUD.
+// Package categoriesapi serves CRUD for a family's reusable category list.
+// This list is the only categorization state crewmate stores; a transaction's
+// category lives in Crew's note field.
 package categoriesapi
 
 import (
@@ -15,6 +17,9 @@ import (
 	"github.com/bemeek-io/crewmate/internal/httpx"
 	"github.com/bemeek-io/crewmate/internal/store"
 )
+
+// renameLimit caps how many transaction notes one rename rewrites in Crew.
+const renameLimit = 500
 
 type Handlers struct {
 	Store *store.Store
@@ -79,7 +84,13 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Update handles PATCH /api/categories/{id}.
+//
+// Renaming matters more than it looks: transaction categories are the note
+// text in Crew, so a rename must rewrite every note that carries the old name,
+// or those transactions silently become uncategorized.
 func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	famID := family.FamilyID(ctx)
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid id")
@@ -97,12 +108,18 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 	if !validCategoryInput(w, req.Name, req.Emoji, req.Color) {
 		return
 	}
-	err = h.Store.UpdateCategory(r.Context(), family.FamilyID(r.Context()), id, req.Name, req.Emoji, req.Color)
+
+	existing, err := h.Store.GetCategory(ctx, famID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		httpx.Error(w, http.StatusNotFound, "not_found", "category not found")
 		return
 	}
 	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load category")
+		return
+	}
+
+	if err := h.Store.UpdateCategory(ctx, famID, id, req.Name, req.Emoji, req.Color); err != nil {
 		if store.IsUniqueViolation(err) {
 			httpx.Error(w, http.StatusConflict, "duplicate", "a category with that name already exists")
 			return
@@ -110,11 +127,26 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not update category")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})
+
+	requeued := 0
+	if !strings.EqualFold(existing.Name, req.Name) {
+		txns, err := h.Store.TransactionsWithNote(ctx, famID, existing.Name, renameLimit)
+		if err != nil {
+			h.Log.Warn("rename note lookup", zap.Error(err))
+		}
+		for _, t := range txns {
+			if err := h.Store.EnqueueNoteWrite(ctx, t.ConnectionID, t.CrewTxnID, req.Name); err != nil {
+				h.Log.Warn("queue rename note", zap.Error(err))
+				continue
+			}
+			requeued++
+		}
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true, "notes_requeued": requeued})
 }
 
-// Delete handles DELETE /api/categories/{id}. Merchant rules cascade;
-// transactions keep their history with category set NULL.
+// Delete handles DELETE /api/categories/{id}. Notes in Crew are left intact —
+// those transactions simply read as uncategorized until relabeled.
 func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -128,70 +160,6 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not delete category")
-		return
-	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-// ListRules handles GET /api/merchant-rules — the review surface for the LLM cache.
-func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
-	rules, err := h.Store.ListMerchantRules(r.Context(), family.FamilyID(r.Context()))
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load rules")
-		return
-	}
-	out := make([]map[string]any, 0, len(rules))
-	for _, rule := range rules {
-		out = append(out, map[string]any{
-			"id":            rule.ID,
-			"merchant_key":  rule.MerchantKey,
-			"category_id":   rule.CategoryID,
-			"category_name": rule.CategoryName,
-			"source":        rule.Source,
-		})
-	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"rules": out})
-}
-
-// UpdateRule handles PATCH /api/merchant-rules/{id}: {category_id}.
-func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid id")
-		return
-	}
-	var req struct {
-		CategoryID uuid.UUID `json:"category_id"`
-	}
-	if !httpx.Decode(w, r, &req) {
-		return
-	}
-	err = h.Store.UpdateMerchantRule(r.Context(), family.FamilyID(r.Context()), id, req.CategoryID)
-	if errors.Is(err, store.ErrNotFound) {
-		httpx.Error(w, http.StatusNotFound, "not_found", "rule not found")
-		return
-	}
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "internal", "could not update rule")
-		return
-	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-// DeleteRule handles DELETE /api/merchant-rules/{id}.
-func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid id")
-		return
-	}
-	err = h.Store.DeleteMerchantRule(r.Context(), family.FamilyID(r.Context()), id)
-	if errors.Is(err, store.ErrNotFound) {
-		httpx.Error(w, http.StatusNotFound, "not_found", "rule not found")
-		return
-	}
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "internal", "could not delete rule")
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})

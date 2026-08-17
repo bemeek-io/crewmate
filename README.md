@@ -11,10 +11,12 @@ What it does:
 - **Instant transaction push** — Web Push (iOS-compatible) the moment a new transaction lands:
   *"$42.97 from Costco, auto-categorized as Groceries"*, or a *tap-to-categorize* prompt when
   the category isn't known. Tapping opens that transaction in the app.
-- **Smart categorization** — family-shared categories; a merchant-rule table auto-applies known
-  merchants; unknown merchants are classified once by Claude Haiku (structured outputs) and the
-  answer is cached as a rule. Correcting a category with *"always categorize X like this"*
-  creates a user rule and back-fills history.
+- **Smart categorization, stored in Crew** — a transaction's category is written to its **note
+  field in Crew**, so it shows up in the Crew app and there's no second copy to drift. Crewmate
+  stores only your family's reusable category list. A new transaction reuses whatever category
+  that merchant last got (history is the cache — including categories you set in the Crew app);
+  a merchant nobody has ever categorized goes to Claude Haiku once. A note you wrote by hand is
+  never overwritten automatically.
 - **Subscription detection** — recurring charges (steady merchant + amount + cadence) are
   detected and surfaced.
 - **Families** — one deployment serves many families; invite codes (single-use, 48 h) share
@@ -33,6 +35,11 @@ Replicas are symmetric and coordinate exclusively through Postgres:
 - **HTTP reads never touch Crew.** Balances are served from `account_snapshots` maintained by
   the holder each poll (≤ ~60 s stale, early refresh via `NOTIFY`). Any replica answers any
   request; no sticky sessions.
+- **Writes to Crew are queued, not direct.** Setting a category means writing a note through the
+  Crew client for *that transaction's* connection, which lives on one replica. API handlers
+  enqueue into `crew_write_jobs`; a `NOTIFY` wakes the holder, which performs the mutation,
+  mirrors the result locally, and retries with backoff. So any family member can categorize any
+  member's transaction from any replica.
 - Login is the **Crew OTP flow relayed through the backend** (SMS, then email if required).
   Phone numbers and OTP codes are never persisted; only the bearer token is stored, encrypted
   with AES-256-GCM (key = `CREW_TOKEN_ENC_KEY`, AAD-bound to its row). Sessions are httpOnly

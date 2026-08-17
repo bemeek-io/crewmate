@@ -19,6 +19,8 @@ export default function TxnRow({ txn }: { txn: Txn }) {
           {txn.pending && " · pending"}
           {txn.category_name ? (
             <> · {txn.category_name}</>
+          ) : txn.has_user_note ? (
+            <> · “{txn.note}”</>
           ) : (
             <>
               {" "}

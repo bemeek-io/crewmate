@@ -24,7 +24,7 @@ type Handlers struct {
 }
 
 func txnJSON(t *store.Transaction) map[string]any {
-	out := map[string]any{
+	return map[string]any{
 		"id":              t.ID,
 		"amount_cents":    t.AmountCents,
 		"payee":           t.Payee,
@@ -38,12 +38,15 @@ func txnJSON(t *store.Transaction) map[string]any {
 		"occurred_at":     t.OccurredAt,
 		"cleared_at":      t.ClearedAt,
 		"pending":         t.ClearedAt == nil,
-		"category_id":     t.CategoryID,
-		"category_name":   t.CategoryName,
-		"category_source": t.CategorySource,
-		"recurring_id":    t.RecurringID,
+		// note is Crew's field and the source of truth for the category;
+		// category_* are derived from it by matching the family's list.
+		"note":          t.Note,
+		"category_id":   t.CategoryID,
+		"category_name": t.CategoryName,
+		// A note that names no category is the user's own annotation.
+		"has_user_note": t.Note != "" && t.CategoryID == nil,
+		"recurring_id":  t.RecurringID,
 	}
-	return out
 }
 
 // List handles GET /api/transactions with keyset pagination:
@@ -118,8 +121,16 @@ func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, out)
 }
 
+// backfillLimit caps how many past transactions one "apply to this merchant"
+// action rewrites, since each is a separate Crew mutation.
+const backfillLimit = 100
+
 // SetCategory handles PATCH /api/transactions/{id}/category.
 // {category_id: uuid|null, apply_to_merchant: bool}
+//
+// The category is stored in Crew's note field, so this enqueues a write that
+// the replica holding this transaction's connection performs. The response is
+// accepted-but-pending by design: the client shows the choice optimistically.
 func (h *Handlers) SetCategory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	famID := family.FamilyID(ctx)
@@ -145,45 +156,46 @@ func (h *Handlers) SetCategory(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load transaction")
 		return
 	}
+
+	note := "" // clearing the category clears the Crew note
 	if req.CategoryID != nil {
-		// Verify the category belongs to this family before assigning it.
-		cats, err := h.Store.ListCategories(ctx, famID)
+		cat, err := h.Store.GetCategory(ctx, famID, *req.CategoryID)
+		if errors.Is(err, store.ErrNotFound) {
+			httpx.Error(w, http.StatusBadRequest, "bad_request", "category not found in your family")
+			return
+		}
 		if err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "internal", "could not verify category")
 			return
 		}
-		found := false
-		for _, c := range cats {
-			if c.ID == *req.CategoryID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			httpx.Error(w, http.StatusBadRequest, "bad_request", "category not found in your family")
-			return
-		}
+		note = cat.Name
 	}
 
-	source := "user"
-	if req.CategoryID == nil {
-		source = "none"
-	}
-	if err := h.Store.SetTransactionCategory(ctx, famID, id, req.CategoryID, source); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "internal", "could not update category")
+	if err := h.Store.EnqueueNoteWrite(ctx, t.ConnectionID, t.CrewTxnID, note); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not queue category update")
 		return
 	}
 
-	backfilled := int64(0)
-	if req.ApplyToMerchant && req.CategoryID != nil && t.MerchantKey != "" {
-		if err := h.Store.UpsertMerchantRule(ctx, famID, t.MerchantKey, *req.CategoryID, "user", "high"); err != nil {
-			h.Log.Warn("upsert user rule", zap.Error(err))
+	queued := 1
+	if req.ApplyToMerchant && note != "" && t.MerchantKey != "" {
+		// Only transactions with no note at all are rewritten; a hand-written
+		// Crew note is never overwritten by a bulk action.
+		others, err := h.Store.UncategorizedForMerchant(ctx, famID, t.MerchantKey, backfillLimit)
+		if err != nil {
+			h.Log.Warn("merchant backfill lookup", zap.Error(err))
 		}
-		if n, err := h.Store.BackfillMerchantCategory(ctx, famID, t.MerchantKey, *req.CategoryID, "rule"); err == nil {
-			backfilled = n
+		for _, o := range others {
+			if o.ID == t.ID {
+				continue
+			}
+			if err := h.Store.EnqueueNoteWrite(ctx, o.ConnectionID, o.CrewTxnID, note); err != nil {
+				h.Log.Warn("queue backfill note", zap.Error(err))
+				continue
+			}
+			queued++
 		}
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true, "backfilled": backfilled})
+	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true, "queued": queued, "note": note})
 }
 
 // ListRecurring handles GET /api/recurring.

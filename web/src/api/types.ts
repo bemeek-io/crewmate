@@ -8,7 +8,7 @@ export interface Me {
 export interface Subaccount {
   id: string;
   name: string;
-  type: string;
+  subaccountType: string;
   overallBalance: number; // cents
   goal: number | null;
 }
@@ -42,9 +42,13 @@ export interface Txn {
   occurred_at: string;
   cleared_at: string | null;
   pending: boolean;
+  /** Crew's note field — the source of truth for the category. */
+  note: string;
+  /** Derived by matching `note` against the family's category list. */
   category_id: string | null;
   category_name: string | null;
-  category_source: "none" | "rule" | "llm" | "user";
+  /** True when the note is a hand-written annotation, not a category. */
+  has_user_note: boolean;
   recurring_id: string | null;
   merchant_key?: string;
 }
@@ -54,14 +58,6 @@ export interface Category {
   name: string;
   emoji: string;
   color: string;
-}
-
-export interface MerchantRule {
-  id: string;
-  merchant_key: string;
-  category_id: string;
-  category_name: string;
-  source: "user" | "llm";
 }
 
 export interface RecurringSeries {

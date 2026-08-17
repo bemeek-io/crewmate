@@ -1,5 +1,7 @@
 // Package categorize turns freshly ingested transactions into categorized,
-// notified ones: merchant rule -> recurring detection -> LLM fallback -> push.
+// notified ones. The category is stored in Crew's per-transaction note field,
+// so the pipeline decides on a category and enqueues a note write; the replica
+// holding that connection's lease performs it.
 package categorize
 
 import (
@@ -91,29 +93,10 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 		p.Log.Warn("pipeline load txn", zap.Error(err))
 		return
 	}
-	if t.NotifiedAt != nil && t.CategoryID != nil {
-		return // fully processed
-	}
 
-	// 1. Categorize: existing merchant rule wins; LLM fills gaps and caches
-	//    its answer as a rule so each merchant costs at most one API call.
-	if t.CategoryID == nil && t.MerchantKey != "" {
-		rule, err := p.Store.GetMerchantRule(ctx, t.FamilyID, t.MerchantKey)
-		if err != nil {
-			p.Log.Warn("pipeline rule lookup", zap.Error(err))
-		}
-		switch {
-		case rule != nil:
-			if err := p.Store.SetTransactionCategory(ctx, t.FamilyID, t.ID, &rule.CategoryID, "rule"); err == nil {
-				t.CategoryID, t.CategoryName = &rule.CategoryID, &rule.CategoryName
-				t.CategorySource = "rule"
-			}
-		case p.LLM.Enabled:
-			p.categorizeWithLLM(ctx, t)
-		}
-	}
+	assigned := p.resolveCategory(ctx, t)
 
-	// 2. Recurring / subscription detection (spends only).
+	// Recurring / subscription detection (spends only).
 	if t.MerchantKey != "" {
 		if seriesID, err := UpdateRecurring(ctx, p.Store, t.FamilyID, t.MerchantKey, t.AmountCents, t.OccurredAt); err != nil {
 			p.Log.Warn("pipeline recurring", zap.Error(err))
@@ -122,23 +105,48 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 		}
 	}
 
-	// 3. Push, exactly once across all replicas.
+	// Push, exactly once across all replicas.
 	if !item.Notify || time.Since(t.OccurredAt) > notifyWindow {
-		// Silently absorb old backfills: claim without sending.
-		_, _ = p.Store.ClaimNotification(ctx, t.ID)
+		_, _ = p.Store.ClaimNotification(ctx, t.ID) // absorb silently
 		return
 	}
 	claimed, err := p.Store.ClaimNotification(ctx, t.ID)
 	if err != nil || !claimed {
 		return
 	}
-	p.Push.SendToFamily(ctx, t.FamilyID, p.buildNotification(t))
+	p.Push.SendToFamily(ctx, t.FamilyID, buildNotification(t, assigned))
 }
 
-func (p *Pipeline) categorizeWithLLM(ctx context.Context, t *store.Transaction) {
+// resolveCategory decides this transaction's category and queues the note
+// write when one is needed. It returns the category name now in effect, or ""
+// when the transaction still needs a human.
+//
+// A note that already holds something is never overwritten automatically: it
+// is either a category the user (or the Crew app) already set, or a genuine
+// hand-written annotation that must not be destroyed.
+func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) string {
+	if t.CategoryName != nil {
+		return *t.CategoryName // already categorized in Crew
+	}
+	if t.Note != "" {
+		return "" // user's own note — leave it alone, ask them to categorize
+	}
+
+	// Prior transactions for this merchant are the merchant→category cache;
+	// this also picks up categories set directly in the Crew app.
+	if name, ok, err := p.Store.SuggestCategoryForMerchant(ctx, t.FamilyID, t.MerchantKey); err != nil {
+		p.Log.Warn("merchant suggestion", zap.Error(err))
+	} else if ok {
+		p.queueNote(ctx, t, name, "history")
+		return name
+	}
+
+	if !p.LLM.Enabled {
+		return ""
+	}
 	cats, err := p.Store.ListCategories(ctx, t.FamilyID)
 	if err != nil || len(cats) == 0 {
-		return
+		return ""
 	}
 	names := make([]string, len(cats))
 	for i, c := range cats {
@@ -146,24 +154,29 @@ func (p *Pipeline) categorizeWithLLM(ctx context.Context, t *store.Transaction) 
 	}
 	name, ok := p.LLM.Categorize(ctx, t.Payee, t.MCC, t.AmountCents, names)
 	if !ok {
-		return
+		return ""
 	}
+	// Normalize to the family's exact spelling so the note matches on read.
 	cat, err := p.Store.GetCategoryByName(ctx, t.FamilyID, name)
 	if err != nil || cat == nil {
-		return
+		return ""
 	}
-	if err := p.Store.SetTransactionCategory(ctx, t.FamilyID, t.ID, &cat.ID, "llm"); err != nil {
-		return
-	}
-	t.CategoryID, t.CategoryName = &cat.ID, &cat.Name
-	t.CategorySource = "llm"
-	// Cache so this merchant never hits the LLM again for this family.
-	if err := p.Store.UpsertMerchantRule(ctx, t.FamilyID, t.MerchantKey, cat.ID, "llm", "high"); err != nil {
-		p.Log.Warn("cache llm rule", zap.Error(err))
-	}
+	p.queueNote(ctx, t, cat.Name, "llm")
+	return cat.Name
 }
 
-func (p *Pipeline) buildNotification(t *store.Transaction) push.Notification {
+func (p *Pipeline) queueNote(ctx context.Context, t *store.Transaction, note, source string) {
+	if err := p.Store.EnqueueNoteWrite(ctx, t.ConnectionID, t.CrewTxnID, note); err != nil {
+		p.Log.Warn("enqueue note write", zap.Error(err))
+		return
+	}
+	p.Log.Info("categorized",
+		zap.String("merchant", t.MerchantKey),
+		zap.String("category", note),
+		zap.String("source", source))
+}
+
+func buildNotification(t *store.Transaction, category string) push.Notification {
 	amount := float64(t.AmountCents) / 100
 	amountStr := fmt.Sprintf("$%.2f", amount)
 	if amount < 0 {
@@ -176,10 +189,10 @@ func (p *Pipeline) buildNotification(t *store.Transaction) push.Notification {
 	if payee == "" {
 		payee = "your account"
 	}
-	if t.CategoryName != nil {
+	if category != "" {
 		return push.Notification{
 			Title: "New transaction",
-			Body:  fmt.Sprintf("%s from %s, auto-categorized as %s", amountStr, payee, *t.CategoryName),
+			Body:  fmt.Sprintf("%s from %s, auto-categorized as %s", amountStr, payee, category),
 			URL:   url,
 		}
 	}

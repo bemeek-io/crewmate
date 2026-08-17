@@ -5,7 +5,7 @@ go 1.26.6
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/anthropics/anthropic-sdk-go v1.63.1
-	github.com/bemeek-io/go-crew v0.0.0-20260816221501-f21107fb3f9b
+	github.com/bemeek-io/go-crew v0.0.0-20260817143800-365226fc6239
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0

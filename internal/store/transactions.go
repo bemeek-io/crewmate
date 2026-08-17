@@ -9,6 +9,9 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// Transaction mirrors a Crew cash transaction. Note holds Crew's user
+// annotation, which crewmate uses as the category: CategoryID/CategoryName are
+// resolved by joining Note against the family's category list, never stored.
 type Transaction struct {
 	ID             uuid.UUID
 	FamilyID       uuid.UUID
@@ -27,12 +30,15 @@ type Transaction struct {
 	SubaccountName string
 	OccurredAt     time.Time
 	ClearedAt      *time.Time
-	CategoryID     *uuid.UUID
-	CategoryName   *string
-	CategorySource string
+	Note           string
+	CategoryID     *uuid.UUID // derived from Note
+	CategoryName   *string    // derived from Note
 	RecurringID    *uuid.UUID
 	NotifiedAt     *time.Time
 }
+
+// Categorized reports whether this transaction's note names a known category.
+func (t *Transaction) Categorized() bool { return t.CategoryID != nil }
 
 type IngestTxn struct {
 	FamilyID       uuid.UUID
@@ -51,6 +57,7 @@ type IngestTxn struct {
 	SubaccountName string
 	OccurredAt     time.Time
 	ClearedAt      *time.Time
+	Note           string
 	Raw            []byte
 }
 
@@ -62,13 +69,13 @@ func (s *Store) InsertTransaction(ctx context.Context, t IngestTxn) (uuid.UUID, 
 		INSERT INTO transactions (
 			family_id, connection_id, crew_txn_id, amount_cents, payee, merchant_key, title,
 			description, status, txn_type, mcc, image_url, subaccount_id, subaccount_name,
-			occurred_at, cleared_at, raw
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+			occurred_at, cleared_at, note, raw
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		ON CONFLICT (connection_id, crew_txn_id) DO NOTHING
 		RETURNING id`,
 		t.FamilyID, t.ConnectionID, t.CrewTxnID, t.AmountCents, t.Payee, t.MerchantKey, t.Title,
 		t.Description, t.Status, t.TxnType, t.MCC, t.ImageURL, t.SubaccountID, t.SubaccountName,
-		t.OccurredAt, t.ClearedAt, t.Raw).Scan(&id)
+		t.OccurredAt, t.ClearedAt, t.Note, t.Raw).Scan(&id)
 	if err == pgx.ErrNoRows {
 		return uuid.Nil, false, nil
 	}
@@ -78,28 +85,43 @@ func (s *Store) InsertTransaction(ctx context.Context, t IngestTxn) (uuid.UUID, 
 	return id, true, nil
 }
 
-// UpdateTransactionFromCrew refreshes mutable fields on status/amount changes.
-func (s *Store) UpdateTransactionFromCrew(ctx context.Context, connID uuid.UUID, crewTxnID string, amountCents int64, status string, clearedAt *time.Time, raw []byte) error {
+// UpdateTransactionFromCrew refreshes mutable fields when Crew reports a
+// change. The note is included: a category set in the Crew app flows back here.
+func (s *Store) UpdateTransactionFromCrew(ctx context.Context, connID uuid.UUID, crewTxnID string, amountCents int64, status string, clearedAt *time.Time, note string, raw []byte) error {
 	_, err := s.Pool.Exec(ctx, `
 		UPDATE transactions
-		SET amount_cents = $3, status = $4, cleared_at = $5, raw = $6
+		SET amount_cents = $3, status = $4, cleared_at = $5, note = $6, raw = $7
 		WHERE connection_id = $1 AND crew_txn_id = $2`,
-		connID, crewTxnID, amountCents, status, clearedAt, raw)
+		connID, crewTxnID, amountCents, status, clearedAt, note, raw)
 	return err
 }
+
+// SetLocalNote updates only the cached note, after a successful write to Crew.
+func (s *Store) SetLocalNote(ctx context.Context, connID uuid.UUID, crewTxnID, note string) error {
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE transactions SET note = $3 WHERE connection_id = $1 AND crew_txn_id = $2`,
+		connID, crewTxnID, note)
+	return err
+}
+
+// The category join derives CategoryID/CategoryName from the note text.
+const txnFrom = `
+	FROM transactions t
+	LEFT JOIN categories c
+	       ON c.family_id = t.family_id AND lower(c.name) = lower(t.note)`
 
 const txnCols = `
 	t.id, t.family_id, t.connection_id, t.crew_txn_id, t.amount_cents, t.payee, t.merchant_key,
 	t.title, t.description, t.status, t.txn_type, t.mcc, t.image_url, t.subaccount_id,
-	t.subaccount_name, t.occurred_at, t.cleared_at, t.category_id, c.name, t.category_source,
+	t.subaccount_name, t.occurred_at, t.cleared_at, t.note, c.id, c.name,
 	t.recurring_id, t.notified_at`
 
 func scanTxn(row pgx.Row) (*Transaction, error) {
 	var t Transaction
 	if err := row.Scan(&t.ID, &t.FamilyID, &t.ConnectionID, &t.CrewTxnID, &t.AmountCents, &t.Payee,
 		&t.MerchantKey, &t.Title, &t.Description, &t.Status, &t.TxnType, &t.MCC, &t.ImageURL,
-		&t.SubaccountID, &t.SubaccountName, &t.OccurredAt, &t.ClearedAt, &t.CategoryID,
-		&t.CategoryName, &t.CategorySource, &t.RecurringID, &t.NotifiedAt); err != nil {
+		&t.SubaccountID, &t.SubaccountName, &t.OccurredAt, &t.ClearedAt, &t.Note,
+		&t.CategoryID, &t.CategoryName, &t.RecurringID, &t.NotifiedAt); err != nil {
 		return nil, err
 	}
 	return &t, nil
@@ -108,10 +130,16 @@ func scanTxn(row pgx.Row) (*Transaction, error) {
 // GetTransactionByID is for internal pipeline use only — HTTP handlers must
 // use GetTransaction, which enforces family scoping.
 func (s *Store) GetTransactionByID(ctx context.Context, id uuid.UUID) (*Transaction, error) {
-	t, err := scanTxn(s.Pool.QueryRow(ctx, `
-		SELECT `+txnCols+` FROM transactions t
-		LEFT JOIN categories c ON c.id = t.category_id
-		WHERE t.id = $1`, id))
+	t, err := scanTxn(s.Pool.QueryRow(ctx, `SELECT `+txnCols+txnFrom+` WHERE t.id = $1`, id))
+	if err == pgx.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	return t, err
+}
+
+func (s *Store) GetTransaction(ctx context.Context, familyID, id uuid.UUID) (*Transaction, error) {
+	t, err := scanTxn(s.Pool.QueryRow(ctx,
+		`SELECT `+txnCols+txnFrom+` WHERE t.id = $2 AND t.family_id = $1`, familyID, id))
 	if err == pgx.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -140,17 +168,6 @@ func (s *Store) SweepUnnotified(ctx context.Context, limit int) ([]uuid.UUID, er
 	return out, rows.Err()
 }
 
-func (s *Store) GetTransaction(ctx context.Context, familyID, id uuid.UUID) (*Transaction, error) {
-	t, err := scanTxn(s.Pool.QueryRow(ctx, `
-		SELECT `+txnCols+` FROM transactions t
-		LEFT JOIN categories c ON c.id = t.category_id
-		WHERE t.id = $2 AND t.family_id = $1`, familyID, id))
-	if err == pgx.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	return t, err
-}
-
 type TxnFilter struct {
 	BeforeTime    *time.Time // keyset cursor: (occurred_at, id) strictly before
 	BeforeID      *uuid.UUID
@@ -163,10 +180,7 @@ func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnF
 	if f.Limit <= 0 || f.Limit > 100 {
 		f.Limit = 50
 	}
-	q := `
-		SELECT ` + txnCols + ` FROM transactions t
-		LEFT JOIN categories c ON c.id = t.category_id
-		WHERE t.family_id = $1`
+	q := `SELECT ` + txnCols + txnFrom + ` WHERE t.family_id = $1`
 	args := []any{familyID}
 	if f.BeforeTime != nil && f.BeforeID != nil {
 		args = append(args, *f.BeforeTime, *f.BeforeID)
@@ -174,13 +188,14 @@ func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnF
 	}
 	if f.CategoryID != nil {
 		args = append(args, *f.CategoryID)
-		q += ` AND t.category_id = $` + itoa(len(args))
+		q += ` AND c.id = $` + strconv.Itoa(len(args))
 	}
 	if f.Uncategorized {
-		q += ` AND t.category_id IS NULL`
+		// No note, or a note that doesn't name one of the family's categories.
+		q += ` AND c.id IS NULL`
 	}
 	args = append(args, f.Limit)
-	q += ` ORDER BY t.occurred_at DESC, t.id DESC LIMIT $` + itoa(len(args))
+	q += ` ORDER BY t.occurred_at DESC, t.id DESC LIMIT $` + strconv.Itoa(len(args))
 
 	rows, err := s.Pool.Query(ctx, q, args...)
 	if err != nil {
@@ -198,33 +213,73 @@ func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnF
 	return out, rows.Err()
 }
 
-func itoa(n int) string { return strconv.Itoa(n) }
-
-// SetTransactionCategory sets a category with provenance.
-func (s *Store) SetTransactionCategory(ctx context.Context, familyID, txnID uuid.UUID, categoryID *uuid.UUID, source string) error {
-	tag, err := s.Pool.Exec(ctx, `
-		UPDATE transactions SET category_id = $3, category_source = $4
-		WHERE id = $2 AND family_id = $1`, familyID, txnID, categoryID, source)
+// SuggestCategoryForMerchant returns the note most recently applied to this
+// merchant that names a known category. This replaces a merchant-rule table:
+// history *is* the cache, and it also learns from categories set in the Crew
+// app directly.
+func (s *Store) SuggestCategoryForMerchant(ctx context.Context, familyID uuid.UUID, merchantKey string) (string, bool, error) {
+	if merchantKey == "" {
+		return "", false, nil
+	}
+	var name string
+	err := s.Pool.QueryRow(ctx, `
+		SELECT c.name
+		FROM transactions t
+		JOIN categories c
+		  ON c.family_id = t.family_id AND lower(c.name) = lower(t.note)
+		WHERE t.family_id = $1 AND t.merchant_key = $2
+		ORDER BY t.occurred_at DESC
+		LIMIT 1`, familyID, merchantKey).Scan(&name)
+	if err == pgx.ErrNoRows {
+		return "", false, nil
+	}
 	if err != nil {
-		return err
+		return "", false, err
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return name, true, nil
 }
 
-// BackfillMerchantCategory applies a category to all uncategorized transactions
-// of a merchant. Returns the number of rows updated.
-func (s *Store) BackfillMerchantCategory(ctx context.Context, familyID uuid.UUID, merchantKey string, categoryID uuid.UUID, source string) (int64, error) {
-	tag, err := s.Pool.Exec(ctx, `
-		UPDATE transactions SET category_id = $3, category_source = $4
-		WHERE family_id = $1 AND category_id IS NULL AND merchant_key = $2`,
-		familyID, merchantKey, categoryID, source)
+// UncategorizedForMerchant lists transactions of a merchant that carry no note
+// at all — the safe targets for an "apply to this merchant" backfill. A
+// transaction whose note is a real user annotation is never touched.
+func (s *Store) UncategorizedForMerchant(ctx context.Context, familyID uuid.UUID, merchantKey string, limit int) ([]*Transaction, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE t.family_id = $1 AND t.merchant_key = $2 AND t.note = ''
+		ORDER BY t.occurred_at DESC LIMIT $3`, familyID, merchantKey, limit)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return tag.RowsAffected(), nil
+	defer rows.Close()
+	var out []*Transaction
+	for rows.Next() {
+		t, err := scanTxn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// TransactionsWithNote finds every transaction whose note matches a given
+// string — used to rewrite notes when a category is renamed.
+func (s *Store) TransactionsWithNote(ctx context.Context, familyID uuid.UUID, note string, limit int) ([]*Transaction, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE t.family_id = $1 AND lower(t.note) = lower($2)
+		ORDER BY t.occurred_at DESC LIMIT $3`, familyID, note, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Transaction
+	for rows.Next() {
+		t, err := scanTxn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // ClaimNotification atomically claims the right to send the push for a txn.

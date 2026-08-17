@@ -45,6 +45,7 @@ type Runner struct {
 	BackfillMonths int
 
 	refreshCh chan struct{}
+	writeCh   chan struct{}
 	persistMu sync.Mutex
 
 	errMu   sync.Mutex
@@ -59,11 +60,23 @@ func (r *Runner) RequestRefresh() {
 	}
 }
 
+// RequestWriteDrain asks the runner to flush queued Crew note writes now
+// rather than at the next poll tick (best effort).
+func (r *Runner) RequestWriteDrain() {
+	select {
+	case r.writeCh <- struct{}{}:
+	default:
+	}
+}
+
 // Run blocks until ctx is canceled, the lease is lost, or the connection hits
 // a terminal state (401 -> needs_relogin, or user disconnect).
 func (r *Runner) Run(ctx context.Context) {
 	if r.refreshCh == nil {
 		r.refreshCh = make(chan struct{}, 1)
+	}
+	if r.writeCh == nil {
+		r.writeCh = make(chan struct{}, 1)
 	}
 	log := r.Log.With(zap.String("conn", r.Conn.ID.String()), zap.Int64("epoch", r.Lease.Epoch))
 
@@ -162,7 +175,8 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 	})
 	client.OnTransactionUpdate(func(tx crew.CashTransaction) {
 		raw, _ := json.Marshal(tx)
-		if err := r.Store.UpdateTransactionFromCrew(ctx, r.Conn.ID, tx.ID, tx.AmountCents, tx.Status, tx.ClearedAt, raw); err != nil {
+		// Note is included: a category set in the Crew app flows back to us.
+		if err := r.Store.UpdateTransactionFromCrew(ctx, r.Conn.ID, tx.ID, tx.AmountCents, tx.Status, tx.ClearedAt, tx.Note, raw); err != nil {
 			log.Warn("update txn from crew", zap.Error(err))
 		}
 	})
@@ -200,6 +214,8 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 			return errors.New("watcher stopped")
 		case <-r.refreshCh:
 			r.refreshSnapshot(ctx, client, log)
+		case <-r.writeCh:
+			r.drainWriteJobs(ctx, client, log)
 		case <-ticker.C:
 			st, held, err := r.Store.ConnectionStatusFenced(ctx, r.Lease)
 			if err == nil {
@@ -211,6 +227,7 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 				}
 			}
 			r.refreshSnapshot(ctx, client, log)
+			r.drainWriteJobs(ctx, client, log)
 			if ok, err := r.Store.TouchPolled(ctx, r.Lease); err == nil && !ok {
 				return errLeaseLost
 			}
@@ -275,6 +292,7 @@ func (r *Runner) ingest(ctx context.Context, tx crew.CashTransaction, notify boo
 		SubaccountName: subName,
 		OccurredAt:     tx.OccurredAt,
 		ClearedAt:      tx.ClearedAt,
+		Note:           tx.Note,
 		Raw:            raw,
 	})
 	if err != nil {

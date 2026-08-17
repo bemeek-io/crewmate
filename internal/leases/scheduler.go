@@ -76,7 +76,8 @@ func (s *Scheduler) Run(ctx context.Context) {
 	log := s.Log.With(zap.String("holder", s.HolderID))
 	log.Info("lease scheduler starting")
 
-	go s.listenRefresh(ctx, log)
+	go s.listen(ctx, log, "crew_refresh", func(hc *heldConn) { hc.runner.RequestRefresh() })
+	go s.listen(ctx, log, "crew_write", func(hc *heldConn) { hc.runner.RequestWriteDrain() })
 
 	tick := s.LeaseTTL / 4
 	ticker := time.NewTicker(tick)
@@ -193,12 +194,13 @@ func (s *Scheduler) shutdown(log *zap.Logger) {
 	}
 }
 
-// listenRefresh forwards NOTIFY crew_refresh payloads (connection IDs) to the
-// runner holding that connection so it refreshes its snapshot early.
-func (s *Scheduler) listenRefresh(ctx context.Context, log *zap.Logger) {
+// listen forwards NOTIFY payloads (connection IDs) on a channel to the runner
+// holding that connection, so cross-replica requests reach the one process
+// that owns the Crew client.
+func (s *Scheduler) listen(ctx context.Context, log *zap.Logger, channel string, deliver func(*heldConn)) {
 	for ctx.Err() == nil {
-		if err := s.listenOnce(ctx); err != nil && ctx.Err() == nil {
-			log.Warn("refresh listener reconnecting", zap.Error(err))
+		if err := s.listenOnce(ctx, channel, deliver); err != nil && ctx.Err() == nil {
+			log.Warn("notify listener reconnecting", zap.String("channel", channel), zap.Error(err))
 			select {
 			case <-ctx.Done():
 				return
@@ -208,13 +210,13 @@ func (s *Scheduler) listenRefresh(ctx context.Context, log *zap.Logger) {
 	}
 }
 
-func (s *Scheduler) listenOnce(ctx context.Context) error {
+func (s *Scheduler) listenOnce(ctx context.Context, channel string, deliver func(*heldConn)) error {
 	conn, err := s.Store.Pool.Acquire(ctx)
 	if err != nil {
 		return err
 	}
 	defer conn.Release()
-	if _, err := conn.Exec(ctx, "LISTEN crew_refresh"); err != nil {
+	if _, err := conn.Exec(ctx, "LISTEN "+pgIdent(channel)); err != nil {
 		return err
 	}
 	for {
@@ -230,7 +232,18 @@ func (s *Scheduler) listenOnce(ctx context.Context) error {
 		hc := s.held[id]
 		s.mu.Unlock()
 		if hc != nil {
-			hc.runner.RequestRefresh()
+			deliver(hc)
 		}
 	}
+}
+
+// pgIdent guards the LISTEN channel name, which cannot be parameterized.
+// Channels are compile-time constants here; this keeps it that way.
+func pgIdent(s string) string {
+	for _, r := range s {
+		if !(r == '_' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+			panic("leases: invalid notify channel name " + s)
+		}
+	}
+	return s
 }

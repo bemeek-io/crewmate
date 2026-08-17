@@ -70,15 +70,16 @@ export default function TransactionDetail() {
         {t.subaccount_name && <div className="muted small">Pocket: {t.subaccount_name}</div>}
         <div style={{ marginTop: 8 }}>
           {t.category_name ? (
-            <span className="pill accent">
-              {t.category_name}
-              {t.category_source === "llm" && " · auto"}
-              {t.category_source === "rule" && " · rule"}
-            </span>
+            <span className="pill accent">{t.category_name}</span>
           ) : (
             <span className="pill warn">uncategorized</span>
           )}
         </div>
+        {t.has_user_note && (
+          <p className="muted small" style={{ marginTop: 8 }}>
+            Note in Crew: “{t.note}” — choosing a category replaces it.
+          </p>
+        )}
       </div>
 
       <h2>{t.category_name ? "Change category" : "Pick a category"}</h2>
@@ -109,10 +110,14 @@ export default function TransactionDetail() {
             onChange={(e) => setApplyToMerchant(e.target.checked)}
           />
           <span className="small">
-            Always categorize <b>{t.payee}</b> like this
+            Also label past <b>{t.payee}</b> transactions that have no note
           </span>
         </label>
       )}
+      <p className="muted small">
+        Saving writes the category to this transaction’s note in Crew, so it appears in the Crew
+        app as well.
+      </p>
 
       {error && <div className="error">{error}</div>}
       <button

@@ -188,3 +188,25 @@ func TestDayOfMonthSpreadWrapsAroundMonthEnd(t *testing.T) {
 		t.Fatalf("spread = %d, want small (wrap-around handled)", got)
 	}
 }
+
+// A subscription's history often opens with something unlike the rest — a
+// signup charge, a different plan, a lapse before it settled. Judging timing
+// over all of it lets that one old outlier decide the classification: a pet
+// insurance premium billed $50.75 on the 1st for five straight months measured
+// 89% interval spread, purely because of a $31.93 charge five months earlier,
+// and was demoted out of subscriptions. Whether something is a subscription
+// now is a question about now.
+func TestClassifyStaleOutlierDoesNotDemoteSubscription(t *testing.T) {
+	a := Classify(occ(
+		at(2025, 10, 26), -3193, // older, different price
+		at(2026, 3, 31), -5075,
+		at(2026, 5, 1), -5075,
+		at(2026, 6, 1), -5075,
+		at(2026, 7, 1), -5075,
+		at(2026, 8, 3), -5075,
+	))
+	if a.Kind != KindSubscription {
+		t.Fatalf("kind = %q, want subscription (amount spread %d%%, interval spread %d%%, day spread %d)",
+			a.Kind, a.AmountSpreadPct, a.IntervalSpreadPct, a.DaySpreadDays)
+	}
+}

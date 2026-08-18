@@ -246,6 +246,21 @@ func Classify(occ []Occurrence) Analysis {
 		return a
 	}
 	a.IntervalSpreadPct = intervalSpread
+
+	// Timing agreement, like amount agreement, is judged on the recent charges.
+	// Old history poisons it otherwise: an insurance premium billed on the 1st
+	// for five straight months measured 89% interval spread — and was demoted
+	// out of subscriptions — purely because of one differently-priced charge
+	// five months earlier. Whether something is a subscription *now* is a
+	// question about now.
+	recentTimes := times
+	if len(recentTimes) > recentWindow+1 {
+		recentTimes = recentTimes[len(recentTimes)-(recentWindow+1):]
+	}
+	recentIntervalSpread := intervalSpread
+	if _, s, ok := intervalStats(recentTimes); ok {
+		recentIntervalSpread = s
+	}
 	a.Cadence, a.PeriodDays = classifyCadence(medianDays)
 	a.DaySpreadDays = dayOfMonthSpread(times)
 
@@ -256,13 +271,14 @@ func Classify(occ []Occurrence) Analysis {
 		// Day-of-month consistency only means something for monthly and longer
 		// cycles; a weekly charge sweeps the calendar by design.
 		dated := a.Cadence == "monthly" || a.Cadence == "quarterly" || a.Cadence == "yearly"
+
 		switch {
 		case exactAmount &&
-			intervalSpread <= exactIntervalSpreadPct &&
+			recentIntervalSpread <= exactIntervalSpreadPct &&
 			(!dated || a.DaySpreadDays <= exactDaySpreadDays):
 			a.Kind = KindSubscription
 		case nearAmount &&
-			intervalSpread <= nearIntervalSpreadPct &&
+			recentIntervalSpread <= nearIntervalSpreadPct &&
 			(!dated || a.DaySpreadDays <= nearDaySpreadDays):
 			a.Kind = KindSubscription
 		}

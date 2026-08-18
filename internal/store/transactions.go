@@ -399,6 +399,59 @@ func (s *Store) MerchantOccurrences(ctx context.Context, familyID uuid.UUID, mer
 	return out, rows.Err()
 }
 
+// Replaceable reports whether a bulk action may rewrite this transaction's
+// category.
+//
+// A note naming one of the family's categories is a category and can be
+// replaced — that is the point of recategorizing. A note naming nothing is
+// something a person typed into Crew, and no bulk action destroys that.
+func (t *Transaction) Replaceable() bool {
+	return t.Note == "" || t.CategoryID != nil
+}
+
+// ListSince returns every transaction in the window regardless of note, for
+// actions that deliberately recategorize rather than fill blanks. Pass a zero
+// time for all history.
+func (s *Store) ListSince(ctx context.Context, familyID uuid.UUID, since time.Time, limit int) ([]*Transaction, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE t.family_id = $1 AND t.occurred_at >= $2
+		ORDER BY t.occurred_at DESC LIMIT $3`, familyID, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Transaction
+	for rows.Next() {
+		t, err := scanTxn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// AllForMerchant returns every transaction for a merchant regardless of note,
+// for recategorizing a merchant wholesale.
+func (s *Store) AllForMerchant(ctx context.Context, familyID uuid.UUID, merchantKey string, limit int) ([]*Transaction, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE t.family_id = $1 AND t.merchant_key = $2
+		ORDER BY t.occurred_at DESC LIMIT $3`, familyID, merchantKey, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Transaction
+	for rows.Next() {
+		t, err := scanTxn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // ListUncategorizedSince returns transactions in the window carrying no note at
 // all, newest first.
 //

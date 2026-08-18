@@ -49,18 +49,38 @@ func (p *Pipeline) Reassess(ctx context.Context, familyID uuid.UUID, since time.
 
 // ApplyRuleToHistory categorizes past transactions that the given rule matches.
 //
-// Same safety as Reassess — only uncategorized transactions are considered, so
-// creating a rule can fill in history without rewriting decisions already made.
-// The rule is matched here to pick candidates, then the pipeline applies it, so
-// there is one implementation of what a rule means.
-func (p *Pipeline) ApplyRuleToHistory(ctx context.Context, familyID uuid.UUID, rule store.CategoryRule) (int, error) {
+// With overwrite false it only fills blanks, so creating a rule can complete
+// history without disturbing decisions already made.
+//
+// With overwrite true it recategorizes — which is the point when a category is
+// being split out of an existing one, say moving credit card bills off Loan
+// Payment onto a new Credit Card category. That deliberately replaces system
+// categories too: the family is saying where these belong, and refusing would
+// leave them editing the entries by hand, which is what they asked to avoid.
+//
+// Neither mode touches a hand-written Crew note. Those aren't categories, and
+// they're the one thing here a person typed themselves.
+func (p *Pipeline) ApplyRuleToHistory(ctx context.Context, familyID uuid.UUID, rule store.CategoryRule, overwrite bool) (int, error) {
 	// No lower bound: "all previous transactions" means all of them.
-	candidates, err := p.Store.ListUncategorizedSince(ctx, familyID, time.Time{}, ReassessLimit)
+	var candidates []*store.Transaction
+	var err error
+	if overwrite {
+		candidates, err = p.Store.ListSince(ctx, familyID, time.Time{}, ReassessLimit)
+	} else {
+		candidates, err = p.Store.ListUncategorizedSince(ctx, familyID, time.Time{}, ReassessLimit)
+	}
 	if err != nil {
 		return 0, err
 	}
+
 	matched := make([]*store.Transaction, 0, len(candidates))
 	for _, t := range candidates {
+		if !t.Replaceable() {
+			continue
+		}
+		if rule.CategoryName != "" && t.Note == rule.CategoryName {
+			continue // already says what the rule would say
+		}
 		if MatchRule(rule, Candidate{
 			Payee:       t.Payee,
 			MerchantKey: t.MerchantKey,
@@ -73,8 +93,35 @@ func (p *Pipeline) ApplyRuleToHistory(ctx context.Context, familyID uuid.UUID, r
 	if len(matched) == 0 {
 		return 0, nil
 	}
-	p.runReassess(ctx, familyID, matched, "rule-backfill")
+
+	if overwrite {
+		// resolveCategory returns early when a category is already set, so
+		// recategorizing has to write the rule's answer directly.
+		p.runRecategorize(ctx, familyID, matched, rule.CategoryName, "rule-recategorize")
+	} else {
+		p.runReassess(ctx, familyID, matched, "rule-backfill")
+	}
 	return len(matched), nil
+}
+
+// runRecategorize writes one category over a set of transactions, in the
+// background and sequentially, for the same reasons as runReassess.
+func (p *Pipeline) runRecategorize(ctx context.Context, familyID uuid.UUID, txns []*store.Transaction, note, reason string) {
+	go func() {
+		runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+		defer cancel()
+		for _, t := range txns {
+			if runCtx.Err() != nil {
+				return
+			}
+			p.queueNote(runCtx, t, note, reason)
+		}
+		p.Log.Info("recategorized",
+			zap.String("reason", reason),
+			zap.String("family", familyID.String()),
+			zap.String("category", note),
+			zap.Int("transactions", len(txns)))
+	}()
 }
 
 // runReassess works through candidates in the background, one at a time.

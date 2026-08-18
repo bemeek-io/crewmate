@@ -178,6 +178,9 @@ func (h *Handlers) SetCategory(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		CategoryID      *uuid.UUID `json:"category_id"`
 		ApplyToMerchant bool       `json:"apply_to_merchant"`
+		// OverwriteExisting extends the merchant backfill to transactions
+		// already categorized, for moving a merchant to a different category.
+		OverwriteExisting bool `json:"overwrite_existing"`
 	}
 	if !httpx.Decode(w, r, &req) {
 		return
@@ -214,14 +217,22 @@ func (h *Handlers) SetCategory(w http.ResponseWriter, r *http.Request) {
 
 	queued := 1
 	if req.ApplyToMerchant && note != "" && t.MerchantKey != "" {
-		// Only transactions with no note at all are rewritten; a hand-written
-		// Crew note is never overwritten by a bulk action.
-		others, err := h.Store.UncategorizedForMerchant(ctx, famID, t.MerchantKey, backfillLimit)
+		// Without overwrite only blank notes are filled. With it, categories
+		// already set are replaced too — including Subscription and Loan
+		// Payment, since moving a merchant off one of those is exactly what
+		// this is for. A hand-written Crew note is never touched either way:
+		// it isn't a category, and it's the one thing here a person typed.
+		var others []*store.Transaction
+		if req.OverwriteExisting {
+			others, err = h.Store.AllForMerchant(ctx, famID, t.MerchantKey, backfillLimit)
+		} else {
+			others, err = h.Store.UncategorizedForMerchant(ctx, famID, t.MerchantKey, backfillLimit)
+		}
 		if err != nil {
 			h.Log.Warn("merchant backfill lookup", zap.Error(err))
 		}
 		for _, o := range others {
-			if o.ID == t.ID {
+			if o.ID == t.ID || !o.Replaceable() || o.Note == note {
 				continue
 			}
 			if err := h.Store.EnqueueNoteWrite(ctx, o.ConnectionID, o.CrewTxnID, note); err != nil {

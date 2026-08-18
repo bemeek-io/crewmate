@@ -13,6 +13,7 @@ interface Draft {
   direction: Direction;
   priority: string;
   apply_to_existing: boolean;
+  overwrite_existing: boolean;
 }
 
 const emptyDraft = (categoryID = ""): Draft => ({
@@ -24,6 +25,7 @@ const emptyDraft = (categoryID = ""): Draft => ({
   direction: "spend",
   priority: "100",
   apply_to_existing: false,
+  overwrite_existing: false,
 });
 
 /** Dollars in the form, cents on the wire. */
@@ -83,6 +85,7 @@ export default function Rules() {
         direction: d.direction,
         priority: Number(d.priority) || 100,
         apply_to_existing: d.apply_to_existing,
+        overwrite_existing: d.apply_to_existing && d.overwrite_existing,
       }),
     onSuccess: () => {
       setDraft(null);
@@ -196,17 +199,31 @@ export default function Rules() {
               ))}
             </select>
 
-            {/* Fills in transactions that were never categorized; it can't
-                overwrite a category already chosen. */}
-            <label className="row" style={{ margin: "14px 0", gap: 10 }}>
+            <label className="row" style={{ margin: "14px 0 0", gap: 10 }}>
               <input
                 type="checkbox"
                 style={{ width: "auto", margin: 0 }}
                 checked={draft.apply_to_existing}
                 onChange={(e) => setDraft({ ...draft, apply_to_existing: e.target.checked })}
               />
-              <span className="small">Also apply to past uncategorized transactions</span>
+              <span className="small">Also apply to past transactions</span>
             </label>
+            {/* Recategorizing is a separate decision from filling blanks. This
+                is how a new category takes over from the one it's split out
+                of — credit card bills moving off Loan Payment, say. */}
+            {draft.apply_to_existing && (
+              <label className="row" style={{ margin: "10px 0 4px 28px", gap: 10 }}>
+                <input
+                  type="checkbox"
+                  style={{ width: "auto", margin: 0 }}
+                  checked={draft.overwrite_existing}
+                  onChange={(e) => setDraft({ ...draft, overwrite_existing: e.target.checked })}
+                />
+                <span className="small">
+                  Including ones already categorized — moves them off their current category
+                </span>
+              </label>
+            )}
 
             {error && <div className="error">{error}</div>}
             <div className="row" style={{ gap: 8 }}>

@@ -56,9 +56,11 @@ type ruleBody struct {
 	MaxAmountCents *int64    `json:"max_amount_cents"`
 	Direction      string    `json:"direction"`
 	Enabled        *bool     `json:"enabled"`
-	// ApplyToExisting backfills the rule over past transactions that were
-	// never categorized. Create-only.
+	// ApplyToExisting backfills the rule over past transactions. Create-only.
 	ApplyToExisting bool `json:"apply_to_existing"`
+	// OverwriteExisting extends that to transactions already categorized —
+	// how a new category takes over from the one it's being split out of.
+	OverwriteExisting bool `json:"overwrite_existing"`
 }
 
 // toInput validates and normalizes a rule body.
@@ -139,7 +141,8 @@ func (h *Handlers) CreateRule(w http.ResponseWriter, r *http.Request) {
 	}
 	out := ruleJSON(*rule)
 	if b.ApplyToExisting && h.Pipeline != nil {
-		n, err := h.Pipeline.ApplyRuleToHistory(r.Context(), family.FamilyID(r.Context()), *rule)
+		n, err := h.Pipeline.ApplyRuleToHistory(
+			r.Context(), family.FamilyID(r.Context()), *rule, b.OverwriteExisting)
 		if err != nil {
 			// The rule itself is created; report that rather than failing it.
 			h.Log.Warn("apply rule to history", zap.Error(err))

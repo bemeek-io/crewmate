@@ -16,6 +16,7 @@ export default function TransactionDetail() {
   // Off by default: labelling one transaction shouldn't quietly rewrite notes
   // on past ones. Opting in is a deliberate choice.
   const [applyToMerchant, setApplyToMerchant] = useState(false);
+  const [overwrite, setOverwrite] = useState(false);
   const [error, setError] = useState("");
 
   // Opening this page from a push notification is a fresh history entry with
@@ -42,6 +43,7 @@ export default function TransactionDetail() {
       patch(`/api/transactions/${id}/category`, {
         category_id: categoryID,
         apply_to_merchant: applyToMerchant,
+        overwrite_existing: applyToMerchant && overwrite,
       }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["transaction", id] });
@@ -153,17 +155,34 @@ export default function TransactionDetail() {
       )}
 
       {t.payee && (
-        <label className="row" style={{ margin: "14px 0", gap: 10 }}>
-          <input
-            type="checkbox"
-            style={{ width: "auto", margin: 0 }}
-            checked={applyToMerchant}
-            onChange={(e) => setApplyToMerchant(e.target.checked)}
-          />
-          <span className="small">
-            Also label past <b>{t.payee}</b> transactions that have no note
-          </span>
-        </label>
+        <>
+          <label className="row" style={{ margin: "14px 0 0", gap: 10 }}>
+            <input
+              type="checkbox"
+              style={{ width: "auto", margin: 0 }}
+              checked={applyToMerchant}
+              onChange={(e) => setApplyToMerchant(e.target.checked)}
+            />
+            <span className="small">
+              Also label past <b>{t.payee}</b> transactions
+            </span>
+          </label>
+          {/* Recategorizing is a separate decision from filling blanks, so it
+              is its own opt-in rather than a wider default. */}
+          {applyToMerchant && (
+            <label className="row" style={{ margin: "10px 0 0 28px", gap: 10 }}>
+              <input
+                type="checkbox"
+                style={{ width: "auto", margin: 0 }}
+                checked={overwrite}
+                onChange={(e) => setOverwrite(e.target.checked)}
+              />
+              <span className="small">
+                Including ones already categorized — moves them off their current category
+              </span>
+            </label>
+          )}
+        </>
       )}
       <p className="muted small" style={{ marginBottom: 18 }}>
         Saving writes the category to this transaction’s note in Crew, so it appears in the Crew

@@ -152,11 +152,35 @@ func (h *Handlers) CreateRule(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, out)
 }
 
+// refuseSeriesRule reports whether a rule is owned by a Subscription or Loan
+// Payment label, in which case editing it here would contradict the label the
+// Recurring page still shows. Clearing the label there removes the rule.
+func (h *Handlers) refuseSeriesRule(w http.ResponseWriter, r *http.Request, id uuid.UUID) bool {
+	rule, err := h.Store.GetRule(r.Context(), family.FamilyID(r.Context()), id)
+	if errors.Is(err, store.ErrNotFound) {
+		httpx.Error(w, http.StatusNotFound, "not_found", "rule not found")
+		return true
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load rule")
+		return true
+	}
+	if rule.Source == "series" {
+		httpx.Error(w, http.StatusBadRequest, "series_rule",
+			"this rule comes from a Subscription or Loan Payment label — change it on the Recurring page")
+		return true
+	}
+	return false
+}
+
 // UpdateRule handles PATCH /api/rules/{id}.
 func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if h.refuseSeriesRule(w, r, id) {
 		return
 	}
 	var b ruleBody
@@ -184,6 +208,9 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	if h.refuseSeriesRule(w, r, id) {
 		return
 	}
 	err = h.Store.DeleteRule(r.Context(), family.FamilyID(r.Context()), id)

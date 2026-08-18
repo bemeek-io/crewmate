@@ -114,6 +114,7 @@ func NewRouter(d Deps) http.Handler {
 
 			fr.Get("/recurring", d.Txns.ListRecurring)
 			fr.Get("/recurring/spend", d.Txns.SubscriptionSpend)
+			fr.Post("/recurring/reclassify", d.Txns.Reclassify)
 			fr.Get("/recurring/{id}/transactions", d.Txns.RecurringTransactions)
 			fr.Put("/recurring/{id}/label", d.Txns.LabelRecurring)
 			fr.Patch("/recurring/{id}", d.Txns.PatchRecurring)

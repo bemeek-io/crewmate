@@ -54,7 +54,7 @@ func (s *Store) ListRules(ctx context.Context, familyID uuid.UUID) ([]CategoryRu
 	rows, err := s.Pool.Query(ctx, `SELECT `+ruleCols+`
 		FROM category_rules r JOIN categories c ON c.id = r.category_id
 		WHERE r.family_id = $1
-		ORDER BY r.priority, r.created_at`, familyID)
+		ORDER BY (r.source = 'series'), r.priority, r.created_at`, familyID)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (s *Store) ListEnabledRules(ctx context.Context, familyID uuid.UUID) ([]Cat
 	rows, err := s.Pool.Query(ctx, `SELECT `+ruleCols+`
 		FROM category_rules r JOIN categories c ON c.id = r.category_id
 		WHERE r.family_id = $1 AND r.enabled
-		ORDER BY r.priority, r.created_at`, familyID)
+		ORDER BY (r.source = 'series'), r.priority, r.created_at`, familyID)
 	if err != nil {
 		return nil, err
 	}
@@ -129,12 +129,18 @@ func (s *Store) GetRule(ctx context.Context, familyID, id uuid.UUID) (*CategoryR
 	return r, err
 }
 
+// UpdateRule edits a rule the family wrote.
+//
+// Series rules are excluded in SQL rather than only in the handler: they exist
+// because a merchant was labelled a subscription or a loan payment, so editing
+// or disabling one would silently contradict the label still shown on the
+// Recurring page. Remove the label there instead, which deletes the rule.
 func (s *Store) UpdateRule(ctx context.Context, familyID, id uuid.UUID, in RuleInput) error {
 	tag, err := s.Pool.Exec(ctx, `
 		UPDATE category_rules
 		SET category_id = $3, priority = $4, payee_match = $5, match_type = $6, mcc = $7,
 		    min_amount_cents = $8, max_amount_cents = $9, direction = $10, enabled = $11
-		WHERE id = $2 AND family_id = $1`,
+		WHERE id = $2 AND family_id = $1 AND source <> 'series'`,
 		familyID, id, in.CategoryID, in.Priority, in.PayeeMatch, in.MatchType, in.MCC,
 		in.MinAmountCents, in.MaxAmountCents, in.Direction, in.Enabled)
 	if err != nil {
@@ -146,8 +152,12 @@ func (s *Store) UpdateRule(ctx context.Context, familyID, id uuid.UUID, in RuleI
 	return nil
 }
 
+// DeleteRule removes a rule the family wrote. A series rule is owned by its
+// label and is removed by clearing that label on the Recurring page.
 func (s *Store) DeleteRule(ctx context.Context, familyID, id uuid.UUID) error {
-	tag, err := s.Pool.Exec(ctx, `DELETE FROM category_rules WHERE id = $2 AND family_id = $1`, familyID, id)
+	tag, err := s.Pool.Exec(ctx,
+		`DELETE FROM category_rules WHERE id = $2 AND family_id = $1 AND source <> 'series'`,
+		familyID, id)
 	if err != nil {
 		return err
 	}

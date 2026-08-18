@@ -267,21 +267,32 @@ export default function Rules() {
                 {describe(r)}
               </div>
             </div>
-            <button
-              className="btn-small btn-secondary"
-              style={{ width: "auto" }}
-              onClick={() => toggle.mutate(r)}
-            >
-              {r.enabled ? "Disable" : "Enable"}
-            </button>
-            <button
-              className="btn-small btn-secondary"
-              style={{ width: "auto" }}
-              aria-label="Delete rule"
-              onClick={() => remove.mutate(r.id)}
-            >
-              <CloseIcon size={13} />
-            </button>
+            {/* A series rule belongs to its Subscription or Loan Payment
+                label. Editing it here would contradict the label still shown
+                on the Recurring page, so it's changed there instead. */}
+            {r.source === "series" ? (
+              <span className="muted small" style={{ whiteSpace: "nowrap" }}>
+                from Recurring
+              </span>
+            ) : (
+              <>
+                <button
+                  className="btn-small btn-secondary"
+                  style={{ width: "auto" }}
+                  onClick={() => toggle.mutate(r)}
+                >
+                  {r.enabled ? "Disable" : "Enable"}
+                </button>
+                <button
+                  className="btn-small btn-secondary"
+                  style={{ width: "auto" }}
+                  aria-label="Delete rule"
+                  onClick={() => remove.mutate(r.id)}
+                >
+                  <CloseIcon size={13} />
+                </button>
+              </>
+            )}
           </div>
         ))}
         {list.length === 0 && (

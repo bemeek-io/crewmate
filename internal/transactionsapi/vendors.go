@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/bemeek-io/crewmate/internal/categorize"
 	"github.com/bemeek-io/crewmate/internal/family"
 	"github.com/bemeek-io/crewmate/internal/httpx"
 	"github.com/bemeek-io/crewmate/internal/store"
@@ -73,6 +74,40 @@ func (h *Handlers) SubscriptionSpend(w http.ResponseWriter, r *http.Request) {
 		// are taken out. A gap against len(vendors) is explainable; a merchant
 		// missing from both is a classification question, not a total bug.
 		"classified_count": classified,
+	})
+}
+
+// Reclassify handles POST /api/recurring/reclassify.
+//
+// Detection normally re-runs when a replica picks up a Crew connection, which
+// ties it to restarts — so after a change to how things are classified, the
+// stored kinds can stay stale with no way to refresh them from the app. This
+// makes it something you can ask for.
+//
+// It rebuilds every merchant's series from stored history and is idempotent,
+// so running it twice is harmless.
+func (h *Handlers) Reclassify(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	famID := family.FamilyID(ctx)
+
+	before, err := h.Store.CountSubscriptionSeries(ctx, famID)
+	if err != nil {
+		h.Log.Warn("count subscriptions before reclassify", zap.Error(err))
+	}
+	n, err := categorize.ReclassifyFamily(ctx, h.Store, famID)
+	if err != nil {
+		h.Log.Error("reclassify", zap.Error(err))
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not re-run detection")
+		return
+	}
+	after, err := h.Store.CountSubscriptionSeries(ctx, famID)
+	if err != nil {
+		h.Log.Warn("count subscriptions after reclassify", zap.Error(err))
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"merchants":     n,
+		"subscriptions": after,
+		"changed":       after - before,
 	})
 }
 

@@ -34,7 +34,9 @@ function EntryTransactions({
     until: new Date(until).toISOString(),
     limit: "100",
   });
-  // A null category means Misc, which the API models as `uncategorized`.
+  // A null category is genuinely uncategorized, which the API models as
+  // `uncategorized`. A category the family happens to name "Misc" is a real
+  // category and is not this.
   if (entry.category_id) params.set("category", entry.category_id);
   else params.set("uncategorized", "1");
 
@@ -124,7 +126,7 @@ function Section({
                       style={{ background: e.color || "var(--border)" }}
                       aria-hidden="true"
                     />
-                    <span className="txn-title">{e.category_name || "Misc"}</span>
+                    <span className="txn-title">{e.category_name || "Uncategorized"}</span>
                   </span>
                   <span className="muted small" style={{ display: "block" }}>
                     {e.count} transaction{e.count === 1 ? "" : "s"} · {pct}%

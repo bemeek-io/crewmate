@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { get } from "./api/client";
 import type { Me } from "./api/types";
 import { syncPushSubscription } from "./push";
+import { useRefreshOnResume } from "./api/refresh";
 import {
   HomeIcon,
   ActivityIcon,
@@ -88,6 +89,9 @@ function TabBar() {
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  // An installed iOS web app resumes rather than focuses, so react-query's
+  // focus refetch doesn't fire and stale data survives being reopened.
+  useRefreshOnResume();
 
   const me = useQuery<Me>({
     queryKey: ["me"],

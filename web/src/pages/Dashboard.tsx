@@ -37,17 +37,17 @@ export default function Dashboard() {
   const accounts = useQuery({
     queryKey: ["accounts"],
     queryFn: () => get<{ members: MemberAccounts[] }>("/api/accounts"),
-    refetchInterval: 60_000,
+    refetchInterval: 20_000,
   });
   const recent = useQuery({
     queryKey: ["transactions", "recent"],
     queryFn: () => get<{ transactions: Txn[] }>("/api/transactions?limit=5"),
-    refetchInterval: 60_000,
+    refetchInterval: 20_000,
   });
   const uncategorized = useQuery({
     queryKey: ["transactions", "uncat-count"],
     queryFn: () => get<{ transactions: Txn[] }>("/api/transactions?uncategorized=1&limit=20"),
-    refetchInterval: 60_000,
+    refetchInterval: 20_000,
   });
 
   const movePocket = useMutation({
@@ -85,8 +85,8 @@ export default function Dashboard() {
           <div className="banner row" style={{ gap: 10 }}>
             <TagIcon size={18} />
             <span className="grow">
-              {uncatCount >= 20 ? "20+" : uncatCount} transaction{uncatCount === 1 ? "" : "s"} in
-              Misc — tap to categorize
+              {uncatCount >= 20 ? "20+" : uncatCount} transaction{uncatCount === 1 ? "" : "s"}{" "}
+              uncategorized — tap to file
             </span>
             <ChevronRightIcon size={16} />
           </div>

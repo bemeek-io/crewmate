@@ -67,7 +67,11 @@ function SeriesDetail({ id }: { id: string }) {
                 day: "numeric",
               })}
               {t.pending && " · pending"}
-              {t.category_name ? ` · ${t.category_name}` : t.note ? ` · ${t.note}` : " · Misc"}
+              {t.category_name
+                ? ` · ${t.category_name}`
+                : t.note
+                  ? ` · ${t.note}`
+                  : " · Uncategorized"}
             </div>
           </div>
           <div className="txn-amount">{fmtCents(t.amount_cents, true)}</div>

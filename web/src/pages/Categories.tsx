@@ -236,7 +236,7 @@ export default function Categories() {
                   onClick={() => {
                     if (
                       confirm(
-                        `Delete "${c.name}"? Transactions keep their note in Crew but will show as Misc.`
+                        `Delete "${c.name}"? Transactions keep their note in Crew but will show as uncategorized.`
                       )
                     ) {
                       remove.mutate(c.id);
@@ -301,7 +301,7 @@ export default function Categories() {
       <div className="card">
         <p className="muted small" style={{ marginBottom: 10 }}>
           Adding a category doesn’t reach spending you’ve already had. This runs the
-          categorizer back over transactions in Misc so new categories catch up. It only fills
+          categorizer back over uncategorized transactions so new categories catch up. It only fills
           in blanks — categories you or a rule already set, including Subscription and Loan
           Payment, are left alone.
         </p>

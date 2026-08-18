@@ -4,12 +4,13 @@ import type { Txn } from "../api/types";
 
 /**
  * A transaction's category is its Crew note matched against the family's
- * category list. Anything that doesn't resolve reads as "Misc" — with the raw
+ * category list. Anything that doesn't resolve reads as "Uncategorized" — a
+ * category the family named "Misc" is a real one and shows its own name — with the raw
  * note shown when there is one, so a personal annotation stays visible.
  */
 export function categoryLabel(txn: Txn): string {
   if (txn.category_name) return txn.category_name;
-  return txn.note ? `Misc · ${txn.note}` : "Misc";
+  return txn.note ? `Uncategorized · ${txn.note}` : "Uncategorized";
 }
 
 export default function TxnRow({ txn }: { txn: Txn }) {

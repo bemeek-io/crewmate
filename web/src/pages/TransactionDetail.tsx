@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { get, patch, fmtCents, ApiError } from "../api/client";
 import { useAddCategoryFromNote, useIgnoreNote } from "../api/categories";
+import { refreshAfterCategorize } from "../api/refresh";
 import type { Category, Txn } from "../api/types";
 import { ChevronLeftIcon } from "../components/Icons";
 
@@ -43,10 +44,11 @@ export default function TransactionDetail() {
         apply_to_merchant: applyToMerchant,
       }),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["transactions"] });
       await qc.invalidateQueries({ queryKey: ["transaction", id] });
-      // Cash flow totals shift when a category changes.
-      await qc.invalidateQueries({ queryKey: ["cashflow"] });
+      // The note write to Crew is asynchronous, and back-filling the merchant's
+      // other transactions rides on the same queue, so keep re-checking as it
+      // settles instead of reading once, immediately, too early.
+      refreshAfterCategorize(qc);
       goBack();
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Could not save"),
@@ -92,7 +94,7 @@ export default function TransactionDetail() {
           {t.category_name ? (
             <span className="pill accent">{t.category_name}</span>
           ) : (
-            <span className="pill">Misc</span>
+            <span className="pill">Uncategorized</span>
           )}
         </div>
         {t.has_user_note && (

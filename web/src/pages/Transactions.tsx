@@ -107,7 +107,7 @@ export default function Transactions() {
     },
     initialPageParam: "",
     getNextPageParam: (last) => (last.transactions.length === PAGE ? last.next_cursor : undefined),
-    refetchInterval: 60_000,
+    refetchInterval: 20_000,
   });
 
   const txns = query.data?.pages.flatMap((p) => p.transactions) ?? [];
@@ -172,7 +172,7 @@ export default function Transactions() {
             update((p) => (uncategorized ? p.delete("uncategorized") : p.set("uncategorized", "1")))
           }
         >
-          Misc
+          Uncategorized
         </button>
         {(categories.data?.categories ?? []).map((c) => {
           const on = selected.includes(c.id);

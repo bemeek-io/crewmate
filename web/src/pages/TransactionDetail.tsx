@@ -80,12 +80,15 @@ export default function TransactionDetail() {
   const currentCategory = selected ?? t.category_id;
 
   const allCategories = categories.data?.categories ?? [];
-  // Show a handful inline and put the rest behind search. The current
-  // category leads — it's the one being changed, so it has to be visible and
-  // reachable to change back to.
+  // The most-used categories inline, rest behind search. Alphabetical order is
+  // no help when picking — what you reach for is what you've reached for
+  // before. The current category always leads, since it's the one being
+  // changed and has to stay visible to revert to.
   const shortlist = (() => {
     const head = allCategories.filter((c) => c.id === currentCategory);
-    const rest = allCategories.filter((c) => c.id !== currentCategory);
+    const rest = allCategories
+      .filter((c) => c.id !== currentCategory)
+      .sort((a, b) => b.usage_count - a.usage_count || a.name.localeCompare(b.name));
     return [...head, ...rest].slice(0, SHORTLIST);
   })();
 

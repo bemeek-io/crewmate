@@ -40,6 +40,8 @@ func catJSON(c store.Category) map[string]any {
 		"system":     c.SystemKey != nil,
 		// Withheld from auto-categorization; still usable by hand and by rules.
 		"exclude_from_llm": c.ExcludeFromLLM,
+		// How many transactions carry it, so a picker leads with what's used.
+		"usage_count": c.UsageCount,
 	}
 }
 

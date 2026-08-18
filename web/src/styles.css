@@ -237,13 +237,19 @@ select:focus {
   border-bottom: 1px solid var(--border);
   padding: 4px 0;
 }
-/* The category picker needs room to scroll; the nav sheet sizes to content. */
+/* Pinned to the top, unlike the nav sheet.
+   Anchored to the bottom, the whole panel shrinks upward as a search narrows
+   the list — so the field you're typing into walks down the screen and the one
+   remaining result ends up somewhere below where you were looking. Fixed to
+   the top, the input never moves and results fill downward from it. */
 .sheet-tall {
-  bottom: 0;
-  max-height: 72dvh;
+  top: 0;
+  bottom: auto;
+  max-height: 100dvh;
+  border-top: 0;
   display: flex;
   flex-direction: column;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: env(safe-area-inset-top);
 }
 .sheet-head {
   display: flex;

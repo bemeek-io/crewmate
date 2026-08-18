@@ -55,6 +55,7 @@ export function useCreateCategory() {
           system: false,
           system_key: null,
           exclude_from_llm: false,
+          usage_count: 0,
         } satisfies Category,
       ].sort(byName),
     [["notes", "unmatched"], ["transactions"]]

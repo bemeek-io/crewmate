@@ -78,6 +78,8 @@ export interface Category {
   system_key: string | null;
   /** Withheld from auto-categorization; still usable by hand and by rules. */
   exclude_from_llm: boolean;
+  /** Transactions carrying this category — drives which are offered first. */
+  usage_count: number;
 }
 
 export type MatchType = "contains" | "equals" | "prefix";

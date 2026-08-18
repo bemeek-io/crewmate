@@ -23,13 +23,24 @@ type Category struct {
 	// ExcludeFromLLM withholds this category from auto-categorization; it
 	// stays available by hand and to rules.
 	ExcludeFromLLM bool
-	CreatedAt      time.Time
+	// UsageCount is how many transactions carry this category, so a picker can
+	// lead with the ones a family actually reaches for. Populated only by
+	// ListCategories.
+	UsageCount int
+	CreatedAt  time.Time
 }
 
 func (s *Store) ListCategories(ctx context.Context, familyID uuid.UUID) ([]Category, error) {
+	// Counted from the notes rather than stored, for the same reason the
+	// category itself isn't stored on the transaction: Crew's note field is the
+	// source of truth, so a tally kept alongside would drift the moment someone
+	// edited a note in the Crew app.
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, family_id, name, color, system_key, exclude_from_llm, created_at
-		FROM categories WHERE family_id = $1 ORDER BY lower(name)`, familyID)
+		SELECT c.id, c.family_id, c.name, c.color, c.system_key, c.exclude_from_llm,
+		       (SELECT COUNT(*) FROM transactions t
+		         WHERE t.family_id = c.family_id AND lower(t.note) = lower(c.name)),
+		       c.created_at
+		FROM categories c WHERE c.family_id = $1 ORDER BY lower(c.name)`, familyID)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +48,8 @@ func (s *Store) ListCategories(ctx context.Context, familyID uuid.UUID) ([]Categ
 	var out []Category
 	for rows.Next() {
 		var c Category
-		if err := rows.Scan(&c.ID, &c.FamilyID, &c.Name, &c.Color, &c.SystemKey, &c.ExcludeFromLLM, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.FamilyID, &c.Name, &c.Color, &c.SystemKey,
+			&c.ExcludeFromLLM, &c.UsageCount, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

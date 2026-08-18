@@ -177,6 +177,4 @@ export interface SubscriptionSpend {
   end: string;
   total_cents: number;
   vendors: VendorSpend[];
-  /** Series detection calls subscriptions, before loans/dismissals come out. */
-  classified_count: number;
 }

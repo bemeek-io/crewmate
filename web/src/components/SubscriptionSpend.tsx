@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { get, post, fmtCents, ApiError } from "../api/client";
+import { get, post, fmtCents } from "../api/client";
 import type { SubscriptionSpend as Data } from "../api/types";
 import TxnList from "./TxnList";
 import { ChevronRightIcon, ChevronDownIcon, RefreshIcon } from "./Icons";
@@ -23,7 +23,6 @@ const RANGES = [
 export default function SubscriptionSpend() {
   const [range, setRange] = useState("1m");
   const [open, setOpen] = useState<string | null>(null);
-  const [rediscoverResult, setRediscoverResult] = useState("");
   const qc = useQueryClient();
 
   const spend = useQuery({
@@ -32,21 +31,9 @@ export default function SubscriptionSpend() {
   });
 
   const rediscover = useMutation({
-    mutationFn: () =>
-      post<{ merchants: number; subscriptions: number; changed: number }>(
-        "/api/recurring/reclassify",
-        {}
-      ),
-    onSuccess: (res) => {
-      setRediscoverResult(
-        res.changed === 0
-          ? `Checked ${res.merchants} merchants — still ${res.subscriptions} subscriptions.`
-          : `${res.subscriptions} subscriptions (${res.changed > 0 ? "+" : ""}${res.changed}).`
-      );
-      qc.invalidateQueries({ queryKey: ["recurring"] });
-    },
-    onError: (e) =>
-      setRediscoverResult(e instanceof ApiError ? e.message : "Could not re-run detection"),
+    mutationFn: () => post("/api/recurring/reclassify", {}),
+    // The totals themselves are the feedback: refetching re-renders them.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["recurring"] }),
   });
 
   const d = spend.data;
@@ -99,15 +86,6 @@ export default function SubscriptionSpend() {
               across {vendors.length} subscription{vendors.length === 1 ? "" : "s"} ·{" "}
               {d.range_label.toLowerCase()}
             </div>
-            {/* Says which question a short total raises: whether a merchant is
-                being left out of the sum, or was never classified as a
-                subscription in the first place. */}
-            {d.classified_count > vendors.length && (
-              <p className="muted small" style={{ marginBottom: 6 }}>
-                {d.classified_count} detected as subscriptions; {d.classified_count - vendors.length}{" "}
-                left out as loan payments or with no charges in this window.
-              </p>
-            )}
 
             {vendors.map((v) => {
               const expanded = open === v.merchant_key;
@@ -145,11 +123,6 @@ export default function SubscriptionSpend() {
               <p className="muted">No subscription charges in this window.</p>
             )}
 
-            {rediscoverResult && (
-              <p className="muted small" style={{ marginTop: 10 }}>
-                {rediscoverResult}
-              </p>
-            )}
           </>
         )}
       </div>

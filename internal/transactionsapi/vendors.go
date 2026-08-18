@@ -49,14 +49,6 @@ func (h *Handlers) SubscriptionSpend(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not total subscriptions")
 		return
 	}
-	// What detection currently believes, so a total that looks short can be
-	// told apart from a merchant that simply isn't classified as a
-	// subscription — the difference between a bug here and a classification
-	// question, which is otherwise invisible from the app.
-	classified, err := h.Store.CountSubscriptionSeries(r.Context(), famID)
-	if err != nil {
-		h.Log.Warn("count subscription series", zap.Error(err))
-	}
 	out := make([]map[string]any, 0, len(vendors))
 	var total int64
 	for _, v := range vendors {
@@ -70,10 +62,6 @@ func (h *Handlers) SubscriptionSpend(w http.ResponseWriter, r *http.Request) {
 		"end":         end,
 		"total_cents": total,
 		"vendors":     out,
-		// Series detection calls subscriptions, before loans and dismissals
-		// are taken out. A gap against len(vendors) is explainable; a merchant
-		// missing from both is a classification question, not a total bug.
-		"classified_count": classified,
 	})
 }
 

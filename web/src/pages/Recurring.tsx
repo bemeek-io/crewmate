@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { get, patch, put, fmtCents } from "../api/client";
 import type { RecurringSeries, Txn } from "../api/types";
 import { ChevronRightIcon, ChevronDownIcon } from "../components/Icons";
+import SubscriptionSpend from "../components/SubscriptionSpend";
 
 // Crewmate's built-in labels. Applying one creates a rule for the merchant.
 const LABELS = [
@@ -167,6 +168,8 @@ export default function Recurring() {
   return (
     <>
       <h1>Recurring</h1>
+
+      <SubscriptionSpend />
 
       <h2>Subscriptions</h2>
       <p className="muted small" style={{ marginTop: -8, marginBottom: 12 }}>

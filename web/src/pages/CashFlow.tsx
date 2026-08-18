@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { get, fmtCents } from "../api/client";
-import type { CashFlow as CashFlowData, CashFlowEntry, Txn } from "../api/types";
+import type { CashFlow as CashFlowData, CashFlowEntry, VendorSpend } from "../api/types";
+import TxnList from "../components/TxnList";
 import { ChevronRightIcon, ChevronDownIcon } from "../components/Icons";
 
 const RANGES = [
@@ -16,33 +16,39 @@ const RANGES = [
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
-/** A row's transactions, fetched only once the row is expanded. */
-function EntryTransactions({
+/**
+ * A category's vendors, and beneath each, its transactions.
+ *
+ * Two levels rather than one: the total answers "how much", but the next
+ * question is always "to whom", and a flat list of every transaction buries
+ * that under repetition — twelve Netflix charges say less than one Netflix
+ * line carrying a total.
+ */
+function EntryVendors({
   entry,
   direction,
+  range,
   since,
   until,
 }: {
   entry: CashFlowEntry;
   direction: "income" | "expense";
+  range: string;
   since: string;
   until: string;
 }) {
-  const params = new URLSearchParams({
-    direction,
-    since: new Date(since).toISOString(),
-    until: new Date(until).toISOString(),
-    limit: "100",
-  });
+  const [open, setOpen] = useState<string | null>(null);
+
+  const query = new URLSearchParams({ range, direction });
   // A null category is genuinely uncategorized, which the API models as
   // `uncategorized`. A category the family happens to name "Misc" is a real
   // category and is not this.
-  if (entry.category_id) params.set("category", entry.category_id);
-  else params.set("uncategorized", "1");
+  if (entry.category_id) query.set("category", entry.category_id);
+  else query.set("uncategorized", "1");
 
   const q = useQuery({
-    queryKey: ["cashflow-txns", params.toString()],
-    queryFn: () => get<{ transactions: Txn[] }>(`/api/transactions?${params}`),
+    queryKey: ["cashflow", "vendors", query.toString()],
+    queryFn: () => get<{ vendors: VendorSpend[] }>(`/api/cashflow/vendors?${query}`),
   });
 
   if (q.isLoading) {
@@ -52,28 +58,41 @@ function EntryTransactions({
       </div>
     );
   }
-  const txns = q.data?.transactions ?? [];
+  const vendors = q.data?.vendors ?? [];
   return (
     <div style={{ padding: "2px 0 10px 26px" }}>
-      {txns.map((t) => (
-        <Link to={`/transactions/${t.id}`} key={t.id} className="txn-row" style={{ paddingLeft: 2 }}>
-          <div className="grow">
-            <div className="txn-title">{t.payee || "Transaction"}</div>
-            <div className="muted small">
-              {new Date(t.occurred_at).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-              })}
-              {t.pending && " · pending"}
-            </div>
+      {vendors.map((v) => {
+        const expanded = open === v.merchant_key;
+        const txnParams = new URLSearchParams({
+          merchant: v.merchant_key,
+          direction,
+          since: new Date(since).toISOString(),
+          until: new Date(until).toISOString(),
+        });
+        return (
+          <div key={v.merchant_key} className="series-row">
+            <button
+              className="row series-toggle"
+              style={{ width: "100%", padding: "10px 0" }}
+              onClick={() => setOpen(expanded ? null : v.merchant_key)}
+              aria-expanded={expanded}
+            >
+              <span className="icon-muted" style={{ lineHeight: 0 }}>
+                {expanded ? <ChevronDownIcon size={15} /> : <ChevronRightIcon size={15} />}
+              </span>
+              <span className="grow" style={{ textAlign: "left", minWidth: 0 }}>
+                <span className="txn-title">{v.payee}</span>
+                <span className="muted small" style={{ display: "block" }}>
+                  {v.count} transaction{v.count === 1 ? "" : "s"}
+                </span>
+              </span>
+              <span className="txn-amount">{fmtCents(v.cents)}</span>
+            </button>
+            {expanded && <TxnList params={txnParams} indent={22} />}
           </div>
-          <div className="txn-amount">{fmtCents(t.amount_cents, true)}</div>
-        </Link>
-      ))}
-      {txns.length === 0 && <p className="muted small">No transactions.</p>}
-      {txns.length === 100 && (
-        <p className="muted small">Showing the first 100 — open Activity for the full list.</p>
-      )}
+        );
+      })}
+      {vendors.length === 0 && <p className="muted small">No transactions.</p>}
     </div>
   );
 }
@@ -83,6 +102,7 @@ function Section({
   entries,
   total,
   direction,
+  range,
   since,
   until,
 }: {
@@ -90,6 +110,7 @@ function Section({
   entries: CashFlowEntry[];
   total: number;
   direction: "income" | "expense";
+  range: string;
   since: string;
   until: string;
 }) {
@@ -135,9 +156,10 @@ function Section({
                 <span className="txn-amount">{fmtCents(e.cents)}</span>
               </button>
               {expanded && (
-                <EntryTransactions
+                <EntryVendors
                   entry={e}
                   direction={direction}
+                  range={range}
                   since={since}
                   until={until}
                 />
@@ -220,6 +242,7 @@ export default function CashFlow() {
             entries={d.expenses}
             total={d.expense_cents}
             direction="expense"
+            range={range}
             since={d.start}
             until={d.end}
           />
@@ -228,6 +251,7 @@ export default function CashFlow() {
             entries={d.income}
             total={d.income_cents}
             direction="income"
+            range={range}
             since={d.start}
             until={d.end}
           />

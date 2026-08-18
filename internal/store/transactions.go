@@ -204,6 +204,8 @@ type TxnFilter struct {
 	Until *time.Time
 	// Direction restricts to money in ("income") or out ("expense").
 	Direction string
+	// MerchantKey restricts to one merchant, for drilling into a vendor line.
+	MerchantKey string
 }
 
 func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnFilter) ([]*Transaction, error) {
@@ -240,6 +242,9 @@ func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnF
 		q += ` AND t.amount_cents > 0`
 	case DirectionExpense:
 		q += ` AND t.amount_cents < 0`
+	}
+	if f.MerchantKey != "" {
+		q += ` AND t.merchant_key = ` + arg(f.MerchantKey)
 	}
 	if term := strings.TrimSpace(f.Query); term != "" {
 		p := arg("%" + term + "%")

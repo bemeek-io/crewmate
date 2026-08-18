@@ -162,3 +162,19 @@ export interface CashFlow {
   expense_cents: number;
   net_cents: number;
 }
+
+export interface VendorSpend {
+  merchant_key: string;
+  payee: string;
+  cents: number;
+  count: number;
+}
+
+export interface SubscriptionSpend {
+  range: string;
+  range_label: string;
+  start: string;
+  end: string;
+  total_cents: number;
+  vendors: VendorSpend[];
+}

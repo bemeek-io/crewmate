@@ -91,6 +91,7 @@ func NewRouter(d Deps) http.Handler {
 			fr.Put("/cards/{cardID}/pocket", d.Crew.MoveCardPocket)
 
 			fr.Get("/cashflow", d.Txns.CashFlow)
+			fr.Get("/cashflow/vendors", d.Txns.CashFlowVendors)
 			fr.Get("/transactions", d.Txns.List)
 			fr.Get("/transactions/{id}", d.Txns.Get)
 			fr.Patch("/transactions/{id}/category", d.Txns.SetCategory)
@@ -112,6 +113,7 @@ func NewRouter(d Deps) http.Handler {
 			fr.Delete("/notes/ignore", d.Categories.Unignore)
 
 			fr.Get("/recurring", d.Txns.ListRecurring)
+			fr.Get("/recurring/spend", d.Txns.SubscriptionSpend)
 			fr.Get("/recurring/{id}/transactions", d.Txns.RecurringTransactions)
 			fr.Put("/recurring/{id}/label", d.Txns.LabelRecurring)
 			fr.Patch("/recurring/{id}", d.Txns.PatchRecurring)

@@ -60,6 +60,7 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 	f := store.TxnFilter{
 		Uncategorized: q.Get("uncategorized") == "1",
 		Query:         q.Get("q"),
+		MerchantKey:   q.Get("merchant"),
 	}
 	if v := q.Get("limit"); v != "" {
 		f.Limit, _ = strconv.Atoi(v)

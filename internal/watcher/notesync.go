@@ -45,7 +45,7 @@ func (r *Runner) syncNotes(ctx context.Context, client *crew.Client, log *zap.Lo
 		changed++
 		// A note may have just become a category (or stopped being one), so
 		// let the pipeline re-evaluate without re-notifying.
-		if t, err := r.Store.GetTransactionByCrewID(ctx, r.Conn.ID, tx.ID); err == nil {
+		if t, err := r.Store.GetTransactionByCrewID(ctx, r.Conn.FamilyID, tx.ID); err == nil {
 			r.Pipeline.Enqueue(categorize.Item{TxnID: t.ID, Notify: false})
 		}
 	}

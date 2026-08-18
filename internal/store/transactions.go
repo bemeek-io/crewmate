@@ -73,7 +73,7 @@ func (s *Store) InsertTransaction(ctx context.Context, t IngestTxn) (uuid.UUID, 
 			description, status, txn_type, mcc, image_url, subaccount_id, subaccount_name,
 			occurred_at, cleared_at, note, raw
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-		ON CONFLICT (connection_id, crew_txn_id) DO NOTHING
+		ON CONFLICT (family_id, crew_txn_id) DO NOTHING
 		RETURNING id`,
 		t.FamilyID, t.ConnectionID, t.CrewTxnID, t.AmountCents, t.Payee, t.MerchantKey, t.Title,
 		t.Description, t.Status, t.TxnType, t.MCC, t.ImageURL, t.SubaccountID, t.SubaccountName,
@@ -89,20 +89,23 @@ func (s *Store) InsertTransaction(ctx context.Context, t IngestTxn) (uuid.UUID, 
 
 // UpdateTransactionFromCrew refreshes mutable fields when Crew reports a
 // change. The note is included: a category set in the Crew app flows back here.
-func (s *Store) UpdateTransactionFromCrew(ctx context.Context, connID uuid.UUID, crewTxnID string, amountCents int64, status string, clearedAt *time.Time, note string, raw []byte) error {
+//
+// Keyed on the household rather than the connection — both members watch the
+// same Crew accounts, and only one of their connections owns the row.
+func (s *Store) UpdateTransactionFromCrew(ctx context.Context, familyID uuid.UUID, crewTxnID string, amountCents int64, status string, clearedAt *time.Time, note string, raw []byte) error {
 	_, err := s.Pool.Exec(ctx, `
 		UPDATE transactions
 		SET amount_cents = $3, status = $4, cleared_at = $5, note = $6, raw = $7
-		WHERE connection_id = $1 AND crew_txn_id = $2`,
-		connID, crewTxnID, amountCents, status, clearedAt, note, raw)
+		WHERE family_id = $1 AND crew_txn_id = $2`,
+		familyID, crewTxnID, amountCents, status, clearedAt, note, raw)
 	return err
 }
 
 // SetLocalNote updates only the cached note, after a successful write to Crew.
-func (s *Store) SetLocalNote(ctx context.Context, connID uuid.UUID, crewTxnID, note string) error {
+func (s *Store) SetLocalNote(ctx context.Context, familyID uuid.UUID, crewTxnID, note string) error {
 	_, err := s.Pool.Exec(ctx, `
-		UPDATE transactions SET note = $3 WHERE connection_id = $1 AND crew_txn_id = $2`,
-		connID, crewTxnID, note)
+		UPDATE transactions SET note = $3 WHERE family_id = $1 AND crew_txn_id = $2`,
+		familyID, crewTxnID, note)
 	return err
 }
 
@@ -134,10 +137,11 @@ func scanTxn(row pgx.Row) (*Transaction, error) {
 }
 
 // GetTransactionByCrewID looks a transaction up by its Crew identity, for the
-// holder-side sync paths that work in Crew's namespace.
-func (s *Store) GetTransactionByCrewID(ctx context.Context, connID uuid.UUID, crewTxnID string) (*Transaction, error) {
+// holder-side sync paths that work in Crew's namespace. Scoped to the
+// household, since either member's connection may own the row.
+func (s *Store) GetTransactionByCrewID(ctx context.Context, familyID uuid.UUID, crewTxnID string) (*Transaction, error) {
 	t, err := scanTxn(s.Pool.QueryRow(ctx,
-		`SELECT `+txnCols+txnFrom+` WHERE t.connection_id = $1 AND t.crew_txn_id = $2`, connID, crewTxnID))
+		`SELECT `+txnCols+txnFrom+` WHERE t.family_id = $1 AND t.crew_txn_id = $2`, familyID, crewTxnID))
 	if err == pgx.ErrNoRows {
 		return nil, ErrNotFound
 	}

@@ -67,7 +67,12 @@ export default function Dashboard() {
 
   const members = accounts.data?.members ?? [];
   const uncatCount = uncategorized.data?.transactions?.length ?? 0;
+  // Every member of a Crew household sees the same accounts, so showing each
+  // member's snapshot listed the same balances once per person. Show only your
+  // own — the balances are shared, and the card is yours.
+  const me_id = me.data?.user.id;
   const visible = members
+    .filter((m) => !me_id || m.user_id === me_id)
     .map((m) => ({ ...m, accounts: (m.accounts ?? []).filter((a) => !isExternal(a)) }))
     .filter((m) => m.accounts.length > 0);
 
@@ -110,9 +115,10 @@ export default function Dashboard() {
         const canMove = isSelf && card !== null;
         return (
           <section key={m.user_id}>
+            {/* No name: these are the household's shared accounts, not this
+                member's, and only your own snapshot is rendered. */}
             <h2>
-              {m.first_name || "Member"}{" "}
-              <span className="small muted">· updated {ago(m.fetched_at)}</span>
+              Balances <span className="small muted">· updated {ago(m.fetched_at)}</span>
             </h2>
             {m.accounts.map((a) => (
               <div className="card" key={a.id}>

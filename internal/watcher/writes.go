@@ -58,7 +58,7 @@ func (r *Runner) drainWriteJobs(ctx context.Context, client *crew.Client, log *z
 		}
 		// Mirror into the local cache so the UI reflects it before the next poll.
 		if j.Kind == store.WriteNote {
-			if err := r.Store.SetLocalNote(ctx, r.Conn.ID, j.TargetID, j.Value); err != nil {
+			if err := r.Store.SetLocalNote(ctx, r.Conn.FamilyID, j.TargetID, j.Value); err != nil {
 				log.Warn("mirror note locally", zap.Error(err))
 			}
 		} else {

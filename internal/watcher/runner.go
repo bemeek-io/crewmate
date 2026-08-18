@@ -178,7 +178,7 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 	client.OnTransactionUpdate(func(tx crew.CashTransaction) {
 		raw, _ := json.Marshal(tx)
 		// Note is included: a category set in the Crew app flows back to us.
-		if err := r.Store.UpdateTransactionFromCrew(ctx, r.Conn.ID, tx.ID, tx.AmountCents, tx.Status, tx.ClearedAt, tx.Note, raw); err != nil {
+		if err := r.Store.UpdateTransactionFromCrew(ctx, r.Conn.FamilyID, tx.ID, tx.AmountCents, tx.Status, tx.ClearedAt, tx.Note, raw); err != nil {
 			log.Warn("update txn from crew", zap.Error(err))
 		}
 	})

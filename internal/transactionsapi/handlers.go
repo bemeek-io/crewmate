@@ -250,10 +250,14 @@ func (h *Handlers) SetCategory(w http.ResponseWriter, r *http.Request) {
 // the UI can explain why something was called a subscription.
 func seriesJSON(s store.RecurringSeries) map[string]any {
 	return map[string]any{
-		"id":                   s.ID,
-		"merchant_key":         s.MerchantKey,
-		"kind":                 s.Kind,
-		"is_subscription":      s.Kind == "subscription",
+		"id":           s.ID,
+		"merchant_key": s.MerchantKey,
+		// kind is what the family treats this as; detected_kind is what the
+		// classifier thought, so the UI can show it was overruled.
+		"kind":                 s.EffectiveKind(),
+		"detected_kind":        s.Kind,
+		"marked_kind":          s.MarkedKind,
+		"is_subscription":      s.EffectiveKind() == "subscription",
 		"typical_amount_cents": s.TypicalAmountCents,
 		"min_amount_cents":     s.MinAmountCents,
 		"max_amount_cents":     s.MaxAmountCents,
@@ -402,12 +406,36 @@ func (h *Handlers) PatchRecurring(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Dismissed bool `json:"dismissed"`
+		Dismissed *bool `json:"dismissed"`
+		// MarkedKind overrules the classifier: "subscription", "recurring", or
+		// "" to defer to detection again. Independent of any category label.
+		MarkedKind *string `json:"marked_kind"`
 	}
 	if !httpx.Decode(w, r, &req) {
 		return
 	}
-	if err := h.Store.SetRecurringDismissed(ctx, family.FamilyID(ctx), id, req.Dismissed); err != nil {
+	famID := family.FamilyID(ctx)
+	if req.MarkedKind != nil {
+		k := *req.MarkedKind
+		if k != "" && k != "subscription" && k != "recurring" {
+			httpx.Error(w, http.StatusBadRequest, "bad_request",
+				"marked_kind must be subscription, recurring, or empty")
+			return
+		}
+		if err := h.Store.SetSeriesKind(ctx, famID, id, k); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				httpx.Error(w, http.StatusNotFound, "not_found", "series not found")
+				return
+			}
+			httpx.Error(w, http.StatusInternalServerError, "internal", "could not update series")
+			return
+		}
+	}
+	if req.Dismissed == nil {
+		httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
+	if err := h.Store.SetRecurringDismissed(ctx, famID, id, *req.Dismissed); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "not_found", "series not found")
 			return

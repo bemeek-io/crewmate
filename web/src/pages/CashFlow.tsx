@@ -63,12 +63,18 @@ function EntryVendors({
     <div style={{ padding: "2px 0 10px 26px" }}>
       {vendors.map((v) => {
         const expanded = open === v.merchant_key;
+        // The category has to travel down with the merchant. A vendor can be
+        // filed under several categories — Costco splits across Groceries,
+        // Gas and Dining — so filtering by merchant alone lists charges that
+        // aren't part of the total being expanded.
         const txnParams = new URLSearchParams({
           merchant: v.merchant_key,
           direction,
           since: new Date(since).toISOString(),
           until: new Date(until).toISOString(),
         });
+        if (entry.category_id) txnParams.set("category", entry.category_id);
+        else txnParams.set("uncategorized", "1");
         return (
           <div key={v.merchant_key} className="series-row">
             <button

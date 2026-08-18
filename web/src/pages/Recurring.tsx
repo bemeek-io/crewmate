@@ -97,6 +97,16 @@ export default function Recurring() {
       patch(`/api/recurring/${id}`, { dismissed }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["recurring"] }),
   });
+  // Overrules the classifier without touching the category. Detection wants a
+  // near-identical amount, so usage-billed services come out merely
+  // "recurring" despite plainly being subscriptions.
+  const setKind = useMutation({
+    mutationFn: ({ id, kind }: { id: string; kind: string }) =>
+      patch(`/api/recurring/${id}`, { marked_kind: kind }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recurring"] });
+    },
+  });
   // Labeling records a rule for the merchant, so future charges are
   // categorized automatically and without a notification.
   const label = useMutation({
@@ -154,6 +164,26 @@ export default function Recurring() {
           >
             {s.dismissed ? "Restore" : "Dismiss"}
           </button>
+        </div>
+        {/* Separate from the category chips above: this decides whether the
+            charge counts toward subscription spend, not where it's filed. */}
+        <div className="chips tight" style={{ margin: "0 0 10px 26px" }}>
+          <button
+            className={`chip sm ${s.is_subscription ? "on" : ""}`}
+            onClick={() =>
+              setKind.mutate({
+                id: s.id,
+                kind: s.is_subscription ? "recurring" : "subscription",
+              })
+            }
+          >
+            {s.is_subscription ? "Counts as subscription" : "Count as subscription"}
+          </button>
+          {s.marked_kind && (
+            <button className="chip sm clear" onClick={() => setKind.mutate({ id: s.id, kind: "" })}>
+              Use detection
+            </button>
+          )}
         </div>
         {s.label_system_key && (
           <p className="muted small" style={{ margin: "-4px 0 10px 26px" }}>

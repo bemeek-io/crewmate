@@ -43,7 +43,11 @@ func (s *Store) SubscriptionSpend(ctx context.Context, familyID uuid.UUID, start
 		      SELECT 1 FROM recurring_series s
 		       WHERE s.family_id = t.family_id
 		         AND s.merchant_key = t.merchant_key
-		         AND s.kind = 'subscription'
+		         -- The member's own judgement wins over the classifier's. It
+		         -- wants a near-identical amount, so usage-billed services
+		         -- (Anthropic, DigitalOcean) land as merely 'recurring'
+		         -- despite plainly being subscriptions.
+		         AND COALESCE(s.marked_kind, s.kind) = 'subscription'
 		         AND NOT s.dismissed
 		  )
 		  -- A car loan bills like a subscription — same vendor, same amount,

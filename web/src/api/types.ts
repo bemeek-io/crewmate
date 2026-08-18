@@ -103,7 +103,12 @@ export interface RecurringSeries {
   id: string;
   merchant_key: string;
   /** subscription = fixed amount on a steady schedule; recurring = repeats but varies. */
+  /** What the family treats this as — their override if given, else detection. */
   kind: "subscription" | "recurring" | "none";
+  /** What detection alone concluded, so an override can be shown as such. */
+  detected_kind: "subscription" | "recurring" | "none";
+  /** Non-empty when a member overruled detection. */
+  marked_kind: string;
   is_subscription: boolean;
   typical_amount_cents: number;
   min_amount_cents: number;

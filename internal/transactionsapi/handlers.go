@@ -324,6 +324,12 @@ func (h *Handlers) LabelRecurring(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not save label")
 		return
 	}
+	// Labelling is the opposite statement to dismissing, so it undoes it.
+	if s.Dismissed {
+		if err := h.Store.SetRecurringDismissed(ctx, famID, id, false); err != nil {
+			h.Log.Warn("clear dismissal on label", zap.Error(err))
+		}
+	}
 
 	// Apply to the charges already on file that carry no note, so the label
 	// takes effect on history and not just future charges.
@@ -407,7 +413,19 @@ func (h *Handlers) PatchRecurring(w http.ResponseWriter, r *http.Request) {
 	if !httpx.Decode(w, r, &req) {
 		return
 	}
-	if err := h.Store.SetRecurringDismissed(ctx, family.FamilyID(ctx), id, req.Dismissed); err != nil {
+	famID := family.FamilyID(ctx)
+	// Dismissing means "don't file this under Subscription or Loan Payment",
+	// so it has to clear the label that does exactly that. It says nothing
+	// about whether the charge recurs: detection still classifies it and the
+	// subscription total still counts it.
+	if req.Dismissed {
+		if s, err := h.Store.GetRecurringSeries(ctx, famID, id); err == nil {
+			if err := h.Store.DeleteSeriesRule(ctx, famID, s.MerchantKey); err != nil {
+				h.Log.Warn("clear series label on dismiss", zap.Error(err))
+			}
+		}
+	}
+	if err := h.Store.SetRecurringDismissed(ctx, famID, id, req.Dismissed); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "not_found", "series not found")
 			return

@@ -86,7 +86,6 @@ function SeriesDetail({ id }: { id: string }) {
 export default function Recurring() {
   const qc = useQueryClient();
   const [open, setOpen] = useState<string | null>(null);
-  const [showDismissed, setShowDismissed] = useState(false);
 
   const series = useQuery({
     queryKey: ["recurring"],
@@ -110,9 +109,11 @@ export default function Recurring() {
   });
 
   const items = series.data?.series ?? [];
-  const subs = items.filter((s) => s.kind === "subscription" && !s.dismissed);
-  const recurring = items.filter((s) => s.kind === "recurring" && !s.dismissed);
-  const dismissed = items.filter((s) => s.dismissed);
+  // Dismissal is a statement about categorization, not about whether
+  // something recurs, so it hides nothing here and removes nothing from the
+  // subscription total.
+  const subs = items.filter((s) => s.kind === "subscription");
+  const recurring = items.filter((s) => s.kind === "recurring");
 
   const renderItem = (s: RecurringSeries) => {
     const expanded = open === s.id;
@@ -148,11 +149,14 @@ export default function Recurring() {
               {l.name}
             </button>
           ))}
+          {/* These three are one choice: which built-in label, or none.
+              Choosing none affects categorization only — it doesn't stop this
+              being detected, listed, or counted in subscription spend. */}
           <button
-            className="chip sm clear"
-            onClick={() => dismiss.mutate({ id: s.id, dismissed: !s.dismissed })}
+            className={`chip sm ${!s.label_system_key ? "on" : ""}`}
+            onClick={() => dismiss.mutate({ id: s.id, dismissed: true })}
           >
-            {s.dismissed ? "Restore" : "Dismiss"}
+            No label
           </button>
         </div>
         {s.label_system_key && (
@@ -195,29 +199,6 @@ export default function Recurring() {
         </>
       )}
 
-      {/* Collapsed by default: dismissing is reversible, so this has to be
-          findable later, but it shouldn't crowd the active lists. */}
-      {dismissed.length > 0 && (
-        <>
-          <button
-            className="row series-toggle"
-            style={{ width: "100%", padding: "18px 0 10px" }}
-            onClick={() => setShowDismissed(!showDismissed)}
-            aria-expanded={showDismissed}
-          >
-            <span className="icon-muted" style={{ lineHeight: 0 }}>
-              {showDismissed ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
-            </span>
-            <span className="grow" style={{ textAlign: "left" }}>
-              <span className="txn-title">Dismissed ({dismissed.length})</span>
-              <span className="muted small" style={{ display: "block" }}>
-                Tap Restore on any of these to bring it back.
-              </span>
-            </span>
-          </button>
-          {showDismissed && <div className="card">{dismissed.map(renderItem)}</div>}
-        </>
-      )}
     </>
   );
 }

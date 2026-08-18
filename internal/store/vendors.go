@@ -25,7 +25,12 @@ type VendorSpend struct {
 // filed under Tech is still a subscription, and a category named Subscription
 // isn't evidence that anything recurs. Only kind='subscription' counts —
 // same vendor, same amount, same point in the cycle — so the merely recurring
-// (groceries every fortnight) is excluded, as is anything dismissed.
+// (groceries every fortnight) is excluded.
+//
+// Dismissing is NOT a filter here. It means "don't file this under Subscription
+// or Loan Payment" — a statement about categorization, not about whether the
+// charge recurs. Treating it as a filter silently removed real subscriptions
+// from the total.
 //
 // EXISTS rather than a join: a merchant can have several series (one per
 // amount), and joining would count its transactions once per series.
@@ -44,7 +49,6 @@ func (s *Store) SubscriptionSpend(ctx context.Context, familyID uuid.UUID, start
 		       WHERE s.family_id = t.family_id
 		         AND s.merchant_key = t.merchant_key
 		         AND s.kind = 'subscription'
-		         AND NOT s.dismissed
 		  )
 		  -- A car loan bills like a subscription — same vendor, same amount,
 		  -- same day — so the classifier calls it one. Filing it under Loan
@@ -79,7 +83,7 @@ func (s *Store) SubscriptionSpend(ctx context.Context, familyID uuid.UUID, start
 }
 
 // CountSubscriptionSeries reports how many merchants detection currently
-// classifies as subscriptions, before loans and dismissals are removed.
+// classifies as subscriptions, before loan payments are removed.
 //
 // Exposed so a total that looks short can be diagnosed from the app itself: a
 // merchant missing from both this count and the total is a classification
@@ -88,7 +92,7 @@ func (s *Store) CountSubscriptionSeries(ctx context.Context, familyID uuid.UUID)
 	var n int
 	err := s.Pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM recurring_series
-		 WHERE family_id = $1 AND kind = 'subscription' AND NOT dismissed`, familyID).Scan(&n)
+		 WHERE family_id = $1 AND kind = 'subscription'`, familyID).Scan(&n)
 	return n, err
 }
 

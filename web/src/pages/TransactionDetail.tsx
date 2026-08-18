@@ -5,7 +5,12 @@ import { get, patch, fmtCents, ApiError } from "../api/client";
 import { useAddCategoryFromNote, useIgnoreNote } from "../api/categories";
 import { refreshAfterCategorize } from "../api/refresh";
 import type { Category, Txn } from "../api/types";
-import { ChevronLeftIcon } from "../components/Icons";
+import { ChevronLeftIcon, SearchIcon } from "../components/Icons";
+import CategorySheet from "../components/CategorySheet";
+
+// How many categories stay inline before the rest move behind search. Six
+// fills three rows on a phone without pushing Save off screen.
+const SHORTLIST = 6;
 
 export default function TransactionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +22,7 @@ export default function TransactionDetail() {
   // on past ones. Opting in is a deliberate choice.
   const [applyToMerchant, setApplyToMerchant] = useState(false);
   const [overwrite, setOverwrite] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
 
   // Opening this page from a push notification is a fresh history entry with
@@ -73,8 +79,27 @@ export default function TransactionDetail() {
   const t = txn.data;
   const currentCategory = selected ?? t.category_id;
 
+  const allCategories = categories.data?.categories ?? [];
+  // Show a handful inline and put the rest behind search. The current
+  // category leads — it's the one being changed, so it has to be visible and
+  // reachable to change back to.
+  const shortlist = (() => {
+    const head = allCategories.filter((c) => c.id === currentCategory);
+    const rest = allCategories.filter((c) => c.id !== currentCategory);
+    return [...head, ...rest].slice(0, SHORTLIST);
+  })();
+
   return (
     <>
+      {picking && (
+        <CategorySheet
+          categories={allCategories}
+          selected={currentCategory ? [currentCategory] : []}
+          onToggle={(c) => setSelected(c.id)}
+          onClose={() => setPicking(false)}
+        />
+      )}
+
       <button className="back-link" onClick={goBack}>
         <ChevronLeftIcon size={17} />
         Back
@@ -134,8 +159,11 @@ export default function TransactionDetail() {
       )}
 
       <h2>{t.category_name ? "Change category" : "Pick a category"}</h2>
+      {/* The likely answers first, then everything else behind a search. The
+          full grid pushed Save off screen once a family had more than a dozen
+          categories, and the one you want is usually one of these. */}
       <div className="category-grid">
-        {(categories.data?.categories ?? []).map((c) => (
+        {shortlist.map((c) => (
           <button
             key={c.id}
             className={`category-option ${currentCategory === c.id ? "selected" : ""}`}
@@ -148,6 +176,15 @@ export default function TransactionDetail() {
           </button>
         ))}
       </div>
+      {allCategories.length > shortlist.length && (
+        <button
+          className="btn-small btn-secondary"
+          style={{ width: "auto", marginTop: 10 }}
+          onClick={() => setPicking(true)}
+        >
+          <SearchIcon size={14} /> All {allCategories.length} categories
+        </button>
+      )}
       {categories.data && categories.data.categories.length === 0 && (
         <p className="muted">
           No categories yet — create some in the Categories tab first.

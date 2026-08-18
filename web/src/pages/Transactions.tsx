@@ -4,7 +4,8 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { get } from "../api/client";
 import type { Category, Txn } from "../api/types";
 import TxnRow from "../components/TxnRow";
-import { CloseIcon } from "../components/Icons";
+import { CloseIcon, PlusIcon } from "../components/Icons";
+import CategorySheet from "../components/CategorySheet";
 
 interface Page {
   transactions: Txn[];
@@ -66,6 +67,7 @@ export default function Transactions() {
   // The debounced write MUST use the functional form of setParams. Building it
   // from a captured `params` reads a snapshot from whenever `term` last
   // changed, so tapping a filter chip mid-debounce would be silently undone.
+  const [picking, setPicking] = useState(false);
   const [term, setTerm] = useState(urlQuery);
   useEffect(() => setTerm(urlQuery), [urlQuery]);
   useEffect(() => {
@@ -110,6 +112,8 @@ export default function Transactions() {
     refetchInterval: 20_000,
   });
 
+  const allCategories = categories.data?.categories ?? [];
+  const chosen = allCategories.filter((c) => selected.includes(c.id));
   const txns = query.data?.pages.flatMap((p) => p.transactions) ?? [];
   const filtersActive = uncategorized || selected.length > 0 || !!urlQuery || !!range;
 
@@ -137,6 +141,21 @@ export default function Transactions() {
 
   return (
     <>
+      {picking && (
+        <CategorySheet
+          categories={allCategories}
+          selected={selected}
+          multi
+          includeUncategorized
+          uncategorized={uncategorized}
+          onToggle={(c) => toggleCategory(c.id)}
+          onToggleUncategorized={() =>
+            update((p) => (uncategorized ? p.delete("uncategorized") : p.set("uncategorized", "1")))
+          }
+          onClose={() => setPicking(false)}
+        />
+      )}
+
       <h1>Activity</h1>
 
       <input
@@ -174,22 +193,19 @@ export default function Transactions() {
         >
           Uncategorized
         </button>
-        {(categories.data?.categories ?? []).map((c) => {
-          const on = selected.includes(c.id);
-          return (
-            <button
-              key={c.id}
-              className={`chip ${on ? "on" : ""}`}
-              onClick={() => toggleCategory(c.id)}
-            >
-              <span
-                className="swatch"
-                style={c.color ? { background: c.color } : undefined}
-              />
-              {c.name}
-            </button>
-          );
-        })}
+        {/* Only the chosen categories get a chip. Rendering every one turned
+            this row into a wall to scroll past once a family had more than a
+            handful, and the ones you've picked are the ones worth seeing. */}
+        {chosen.map((c) => (
+          <button key={c.id} className="chip on" onClick={() => toggleCategory(c.id)}>
+            <span className="swatch" style={c.color ? { background: c.color } : undefined} />
+            {c.name}
+            <CloseIcon size={11} />
+          </button>
+        ))}
+        <button className="chip" onClick={() => setPicking(true)}>
+          <PlusIcon size={12} /> Category
+        </button>
         {filtersActive && (
           <button
             className="chip clear"

@@ -237,15 +237,48 @@ select:focus {
   border-bottom: 1px solid var(--border);
   padding: 4px 0;
 }
+/* The category picker needs room to scroll; the nav sheet sizes to content. */
+.sheet-tall {
+  bottom: 0;
+  max-height: 72dvh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.sheet-list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .sheet-item {
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
+  margin: 0;
   padding: 15px 18px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
   color: var(--text);
   text-decoration: none;
-  border-bottom: 1px solid var(--border);
+  font-family: inherit;
+  font-size: 0.95rem;
   font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.sheet-item.active {
+  color: var(--accent);
+}
+.sheet-item:disabled {
+  opacity: 0.5;
 }
 .sheet-item:last-child {
   border-bottom: 0;

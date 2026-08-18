@@ -125,7 +125,31 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 	if err != nil || !claimed {
 		return
 	}
-	p.Push.SendToFamily(ctx, t.FamilyID, buildNotification(t, res.category))
+	p.notify(ctx, t, res.category)
+}
+
+// notify sends to the cardholder for a card swipe, and to the whole household
+// otherwise.
+//
+// A purchase on someone's own card is theirs; their partner does not need a
+// push every time they buy lunch. Everything else — bank transfers, bills, and
+// the per-merchant virtual cards that pay for household subscriptions — is
+// shared money and stays shared.
+//
+// An unrecognized card notifies everyone. That's the safe direction: a missed
+// notification about real money costs more than a redundant one.
+func (p *Pipeline) notify(ctx context.Context, t *store.Transaction, category string) {
+	n := buildNotification(t, category)
+	if t.DebitCardID != "" {
+		owner, ok, err := p.Store.CardOwner(ctx, t.FamilyID, t.DebitCardID)
+		if err != nil {
+			p.Log.Warn("card owner lookup", zap.Error(err))
+		} else if ok {
+			p.Push.SendToUser(ctx, owner, n)
+			return
+		}
+	}
+	p.Push.SendToFamily(ctx, t.FamilyID, n)
 }
 
 // resolveCategory decides this transaction's category and queues the note

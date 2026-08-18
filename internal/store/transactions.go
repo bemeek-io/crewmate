@@ -32,11 +32,14 @@ type Transaction struct {
 	OccurredAt     time.Time
 	ClearedAt      *time.Time
 	Note           string
-	CategoryID     *uuid.UUID // derived from Note
-	CategoryName   *string    // derived from Note
-	NoteIgnored    bool       // note deliberately not treated as a category
-	RecurringID    *uuid.UUID
-	NotifiedAt     *time.Time
+	// DebitCardID is Crew's id for the card that paid, empty for bank
+	// transactions. It decides who a notification is for.
+	DebitCardID  string
+	CategoryID   *uuid.UUID // derived from Note
+	CategoryName *string    // derived from Note
+	NoteIgnored  bool       // note deliberately not treated as a category
+	RecurringID  *uuid.UUID
+	NotifiedAt   *time.Time
 }
 
 // Categorized reports whether this transaction's note names a known category.
@@ -60,6 +63,7 @@ type IngestTxn struct {
 	OccurredAt     time.Time
 	ClearedAt      *time.Time
 	Note           string
+	DebitCardID    string
 	Raw            []byte
 }
 
@@ -71,13 +75,13 @@ func (s *Store) InsertTransaction(ctx context.Context, t IngestTxn) (uuid.UUID, 
 		INSERT INTO transactions (
 			family_id, connection_id, crew_txn_id, amount_cents, payee, merchant_key, title,
 			description, status, txn_type, mcc, image_url, subaccount_id, subaccount_name,
-			occurred_at, cleared_at, note, raw
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+			occurred_at, cleared_at, note, debit_card_id, raw
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		ON CONFLICT (family_id, crew_txn_id) DO NOTHING
 		RETURNING id`,
 		t.FamilyID, t.ConnectionID, t.CrewTxnID, t.AmountCents, t.Payee, t.MerchantKey, t.Title,
 		t.Description, t.Status, t.TxnType, t.MCC, t.ImageURL, t.SubaccountID, t.SubaccountName,
-		t.OccurredAt, t.ClearedAt, t.Note, t.Raw).Scan(&id)
+		t.OccurredAt, t.ClearedAt, t.Note, t.DebitCardID, t.Raw).Scan(&id)
 	if err == pgx.ErrNoRows {
 		return uuid.Nil, false, nil
 	}
@@ -122,14 +126,14 @@ const txnFrom = `
 const txnCols = `
 	t.id, t.family_id, t.connection_id, t.crew_txn_id, t.amount_cents, t.payee, t.merchant_key,
 	t.title, t.description, t.status, t.txn_type, t.mcc, t.image_url, t.subaccount_id,
-	t.subaccount_name, t.occurred_at, t.cleared_at, t.note, c.id, c.name,
+	t.subaccount_name, t.occurred_at, t.cleared_at, t.note, t.debit_card_id, c.id, c.name,
 	(i.family_id IS NOT NULL) AS note_ignored, t.recurring_id, t.notified_at`
 
 func scanTxn(row pgx.Row) (*Transaction, error) {
 	var t Transaction
 	if err := row.Scan(&t.ID, &t.FamilyID, &t.ConnectionID, &t.CrewTxnID, &t.AmountCents, &t.Payee,
 		&t.MerchantKey, &t.Title, &t.Description, &t.Status, &t.TxnType, &t.MCC, &t.ImageURL,
-		&t.SubaccountID, &t.SubaccountName, &t.OccurredAt, &t.ClearedAt, &t.Note,
+		&t.SubaccountID, &t.SubaccountName, &t.OccurredAt, &t.ClearedAt, &t.Note, &t.DebitCardID,
 		&t.CategoryID, &t.CategoryName, &t.NoteIgnored, &t.RecurringID, &t.NotifiedAt); err != nil {
 		return nil, err
 	}

@@ -313,6 +313,7 @@ func (r *Runner) ingest(ctx context.Context, tx crew.CashTransaction, notify boo
 		OccurredAt:     tx.OccurredAt,
 		ClearedAt:      tx.ClearedAt,
 		Note:           tx.Note,
+		DebitCardID:    debitCardID(tx),
 		Raw:            raw,
 	})
 	if err != nil {
@@ -379,3 +380,12 @@ type zapCrewAdapter struct{ s *zap.SugaredLogger }
 func (a zapCrewAdapter) Debug(msg string, args ...any) { a.s.Debugw(msg, args...) }
 func (a zapCrewAdapter) Info(msg string, args ...any)  { a.s.Infow(msg, args...) }
 func (a zapCrewAdapter) Error(msg string, args ...any) { a.s.Errorw(msg, args...) }
+
+// debitCardID is the card that paid, empty for bank transactions. It decides
+// whether a notification is one member's business or the household's.
+func debitCardID(tx crew.CashTransaction) string {
+	if tx.DebitCard == nil {
+		return ""
+	}
+	return tx.DebitCard.ID
+}

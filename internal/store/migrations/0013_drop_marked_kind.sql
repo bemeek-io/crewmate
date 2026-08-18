@@ -1,0 +1,11 @@
+-- Detection's job, not a checkbox's.
+--
+-- 0012 added a manual "count this as a subscription" override to work around
+-- the classifier demoting real subscriptions. The classifier was simply wrong:
+-- it judged timing across all history, so one stale charge could sink a
+-- premium billed identically on the same day for months. Fixing that removed
+-- the reason for the override, and asking someone to hand-classify what
+-- detection exists to do is a worse answer than making detection right.
+--
+-- Dropped rather than left dormant; no row ever used it.
+ALTER TABLE recurring_series DROP COLUMN IF EXISTS marked_kind;

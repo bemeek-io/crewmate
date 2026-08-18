@@ -28,9 +28,6 @@ type RecurringSeries struct {
 	LastSeenAt         time.Time
 	OccurrenceCount    int
 	Dismissed          bool
-	// MarkedKind is the member's own judgement, overriding the classifier's.
-	// Empty means the classifier's Kind stands.
-	MarkedKind string
 	// Label is the system category this merchant was labeled with, carried by
 	// the series rule (nil when unlabeled).
 	LabelSystemKey *string
@@ -98,15 +95,14 @@ const seriesCols = `
 	s.id, s.family_id, s.merchant_key, s.kind, s.typical_amount_cents, s.min_amount_cents,
 	s.max_amount_cents, s.cadence, s.period_days, s.interval_spread_pct, s.amount_spread_pct,
 	s.day_spread_days, s.first_seen_at, s.last_seen_at, s.occurrence_count, s.dismissed,
-	COALESCE(s.marked_kind, ''), lc.system_key, lc.name`
+	lc.system_key, lc.name`
 
 func scanSeries(row pgx.Row) (*RecurringSeries, error) {
 	var r RecurringSeries
 	if err := row.Scan(&r.ID, &r.FamilyID, &r.MerchantKey, &r.Kind, &r.TypicalAmountCents,
 		&r.MinAmountCents, &r.MaxAmountCents, &r.Cadence, &r.PeriodDays, &r.IntervalSpreadPct,
 		&r.AmountSpreadPct, &r.DaySpreadDays, &r.FirstSeenAt, &r.LastSeenAt,
-		&r.OccurrenceCount, &r.Dismissed, &r.MarkedKind,
-		&r.LabelSystemKey, &r.LabelName); err != nil {
+		&r.OccurrenceCount, &r.Dismissed, &r.LabelSystemKey, &r.LabelName); err != nil {
 		return nil, err
 	}
 	return &r, nil

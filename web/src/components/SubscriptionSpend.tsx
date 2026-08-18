@@ -66,6 +66,15 @@ export default function SubscriptionSpend() {
               across {vendors.length} subscription{vendors.length === 1 ? "" : "s"} ·{" "}
               {d.range_label.toLowerCase()}
             </div>
+            {/* Says which question a short total raises: whether a merchant is
+                being left out of the sum, or was never classified as a
+                subscription in the first place. */}
+            {d.classified_count > vendors.length && (
+              <p className="muted small" style={{ marginBottom: 6 }}>
+                {d.classified_count} detected as subscriptions; {d.classified_count - vendors.length}{" "}
+                left out as loan payments or with no charges in this window.
+              </p>
+            )}
 
             {vendors.map((v) => {
               const expanded = open === v.merchant_key;

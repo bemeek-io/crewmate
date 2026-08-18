@@ -43,17 +43,24 @@ func (s *Store) SubscriptionSpend(ctx context.Context, familyID uuid.UUID, start
 		      SELECT 1 FROM recurring_series s
 		       WHERE s.family_id = t.family_id
 		         AND s.merchant_key = t.merchant_key
-		         -- The member's own judgement wins over the classifier's. It
-		         -- wants a near-identical amount, so usage-billed services
-		         -- (Anthropic, DigitalOcean) land as merely 'recurring'
-		         -- despite plainly being subscriptions.
-		         AND COALESCE(s.marked_kind, s.kind) = 'subscription'
+		         AND s.kind = 'subscription'
 		         AND NOT s.dismissed
 		  )
 		  -- A car loan bills like a subscription — same vendor, same amount,
-		  -- same day — so the classifier calls it one. Labelling it Loan
-		  -- Payment is the family saying otherwise, and a loan in the
-		  -- subscriptions total would swamp it.
+		  -- same day — so the classifier calls it one. Filing it under Loan
+		  -- Payment is the family saying otherwise, and a loan left in would
+		  -- swamp every real subscription.
+		  --
+		  -- Judged on the transaction's own category, so it holds however that
+		  -- category was applied: by hand, by a rule, or by labelling the
+		  -- series. Checking only the series label missed the other two.
+		  AND NOT EXISTS (
+		      SELECT 1 FROM categories lc
+		       WHERE lc.family_id = t.family_id
+		         AND lc.system_key = '`+SystemLoanPayment+`'
+		         AND lower(lc.name) = lower(t.note)
+		  )
+		  -- For charges not categorized at all, the series label still decides.
 		  AND NOT EXISTS (
 		      SELECT 1 FROM category_rules r
 		        JOIN categories lc ON lc.id = r.category_id
@@ -69,6 +76,20 @@ func (s *Store) SubscriptionSpend(ctx context.Context, familyID uuid.UUID, start
 	}
 	defer rows.Close()
 	return scanVendorSpend(rows)
+}
+
+// CountSubscriptionSeries reports how many merchants detection currently
+// classifies as subscriptions, before loans and dismissals are removed.
+//
+// Exposed so a total that looks short can be diagnosed from the app itself: a
+// merchant missing from both this count and the total is a classification
+// question, not a fault in the totalling.
+func (s *Store) CountSubscriptionSeries(ctx context.Context, familyID uuid.UUID) (int, error) {
+	var n int
+	err := s.Pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM recurring_series
+		 WHERE family_id = $1 AND kind = 'subscription' AND NOT dismissed`, familyID).Scan(&n)
+	return n, err
 }
 
 // CashFlowVendors breaks one cash flow line down by merchant.

@@ -195,8 +195,8 @@ export default function TransactionDetail() {
       )}
 
       {t.payee && (
-        <>
-          <label className="row" style={{ margin: "14px 0 0", gap: 10 }}>
+        <div className="opt-group">
+          <label className="row" style={{ margin: 0, gap: 10 }}>
             <input
               type="checkbox"
               style={{ width: "auto", margin: 0 }}
@@ -222,7 +222,7 @@ export default function TransactionDetail() {
               </span>
             </label>
           )}
-        </>
+        </div>
       )}
       <p className="muted small" style={{ marginBottom: 18 }}>
         Saving writes the category to this transaction’s note in Crew, so it appears in the Crew

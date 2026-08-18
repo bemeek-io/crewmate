@@ -589,6 +589,12 @@ select:focus {
   color: var(--text);
 }
 
+/* A checkbox and the option it reveals, kept clear of whatever follows —
+   otherwise the label sits flush against the next control. */
+.opt-group {
+  margin: 14px 0 20px;
+}
+
 /* A bare icon action sitting in a section header. */
 .icon-btn {
   width: auto;

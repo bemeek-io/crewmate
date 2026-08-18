@@ -199,7 +199,8 @@ export default function Rules() {
               ))}
             </select>
 
-            <label className="row" style={{ margin: "14px 0 0", gap: 10 }}>
+            <div className="opt-group">
+            <label className="row" style={{ margin: 0, gap: 10 }}>
               <input
                 type="checkbox"
                 style={{ width: "auto", margin: 0 }}
@@ -212,7 +213,7 @@ export default function Rules() {
                 is how a new category takes over from the one it's split out
                 of — credit card bills moving off Loan Payment, say. */}
             {draft.apply_to_existing && (
-              <label className="row" style={{ margin: "10px 0 4px 28px", gap: 10 }}>
+              <label className="row" style={{ margin: "10px 0 0 28px", gap: 10 }}>
                 <input
                   type="checkbox"
                   style={{ width: "auto", margin: 0 }}
@@ -224,6 +225,8 @@ export default function Rules() {
                 </span>
               </label>
             )}
+
+            </div>
 
             {error && <div className="error">{error}</div>}
             <div className="row" style={{ gap: 8 }}>

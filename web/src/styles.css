@@ -424,6 +424,28 @@ select:focus {
   min-width: 0;
 }
 
+/* The badge has moved on tap but Crew hasn't confirmed yet. A quiet pulse
+   says "landed, still settling" without the jump of a placeholder appearing
+   and disappearing in its place. */
+.card-badge.settling {
+  animation: settle 1.4s ease-in-out infinite;
+}
+@keyframes settle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-badge.settling {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 /* Debit card badge shown on the pocket it spends from. */
 .card-badge {
   display: inline-flex;

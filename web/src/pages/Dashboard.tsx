@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { get, put, fmtCents, ApiError } from "../api/client";
 import type { Account, Card, MemberAccounts, Me, Txn } from "../api/types";
 import TxnRow from "../components/TxnRow";
@@ -30,14 +30,17 @@ function debitCard(cards: Card[] | null): Card | null {
 }
 
 export default function Dashboard() {
-  const qc = useQueryClient();
   const [error, setError] = useState("");
+  // Where the card has been asked to go, held until the snapshot agrees.
+  const [pendingPocket, setPendingPocket] = useState<string | null>(null);
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => get<Me>("/api/me") });
   const accounts = useQuery({
     queryKey: ["accounts"],
     queryFn: () => get<{ members: MemberAccounts[] }>("/api/accounts"),
-    refetchInterval: 20_000,
+    // The Crew write is queued, so poll harder while waiting on it rather
+    // than leaving the card looking stuck for most of a minute.
+    refetchInterval: pendingPocket ? 2_500 : 20_000,
   });
   const recent = useQuery({
     queryKey: ["transactions", "recent"],
@@ -53,20 +56,37 @@ export default function Dashboard() {
   const movePocket = useMutation({
     mutationFn: (v: { cardID: string; subaccountID: string }) =>
       put(`/api/cards/${v.cardID}/pocket`, { subaccount_id: v.subaccountID }),
-    onSuccess: () => {
+    // The badge moves on tap and stays put. Tying it to the request instead
+    // showed "moving…" for the few hundred milliseconds the call took, then
+    // dropped it — the card only actually hopped a poll later, when the
+    // snapshot caught up, which read as a glitch followed by a jump.
+    onMutate: (v) => {
       setError("");
-      // The move happens in Crew; the snapshot catches up within a poll.
-      setTimeout(() => qc.invalidateQueries({ queryKey: ["accounts"] }), 1500);
+      setPendingPocket(v.subaccountID);
     },
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Could not move the card"),
+    onError: (e) => {
+      setPendingPocket(null);
+      setError(e instanceof ApiError ? e.message : "Could not move the card");
+    },
   });
-
-  // The pocket a move is in flight to, so it can show a spinner-ish badge
-  // until the next snapshot lands.
-  const movingTo = movePocket.isPending ? movePocket.variables?.subaccountID : null;
 
   const members = accounts.data?.members ?? [];
   const uncatCount = uncategorized.data?.transactions?.length ?? 0;
+  const myCard = debitCard(members.find((m) => m.user_id === me.data?.user.id)?.cards ?? null);
+
+  // Let go once the snapshot reports the card where it was sent.
+  useEffect(() => {
+    if (pendingPocket && myCard?.subaccount_id === pendingPocket) setPendingPocket(null);
+  }, [pendingPocket, myCard?.subaccount_id]);
+
+  // A queued Crew write can fail after the request succeeded, and holding the
+  // badge somewhere it never went is worse than admitting we don't know: give
+  // up after a minute and show whatever the snapshot says.
+  useEffect(() => {
+    if (!pendingPocket) return;
+    const t = setTimeout(() => setPendingPocket(null), 60_000);
+    return () => clearTimeout(t);
+  }, [pendingPocket]);
   // Every member of a Crew household sees the same accounts, so showing each
   // member's snapshot listed the same balances once per person. Show only your
   // own — the balances are shared, and the card is yours.
@@ -131,11 +151,14 @@ export default function Dashboard() {
                         p.goal && p.goal > 0
                           ? Math.min(100, Math.round((p.overallBalance / p.goal) * 100))
                           : null;
-                      const hasCard = card !== null && card.subaccount_id === p.id;
+                      // Where the card is shown: the requested pocket while a
+                      // move settles, otherwise where the snapshot says it is.
+                      const shownPocket = (isSelf && pendingPocket) || card?.subaccount_id;
+                      const hasCard = card !== null && shownPocket === p.id;
                       // Tapping any other pocket moves the card straight there
                       // — no card picker, the badge just relocates.
                       const isTarget = canMove && !hasCard;
-                      const landing = movingTo === p.id;
+                      const settling = hasCard && isSelf && pendingPocket === p.id;
                       return (
                         <div
                           className={`pocket ${isTarget ? "pocket-target" : ""}`}
@@ -151,15 +174,12 @@ export default function Dashboard() {
                             <span className="row grow" style={{ gap: 8 }}>
                               {p.name}
                               {hasCard && (
-                                <span className="card-badge" title={`Card •••• ${card!.last_four}`}>
+                                <span
+                                  className={`card-badge ${settling ? "settling" : ""}`}
+                                  title={`Card •••• ${card!.last_four}`}
+                                >
                                   <CardIcon size={14} />
                                   {card!.last_four}
-                                </span>
-                              )}
-                              {landing && (
-                                <span className="card-badge">
-                                  <CardIcon size={14} />
-                                  moving…
                                 </span>
                               )}
                             </span>

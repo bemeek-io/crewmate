@@ -189,7 +189,7 @@ export default function Recurring() {
         <>
           <h2>Recurring spending</h2>
           <p className="muted small" style={{ marginTop: -8, marginBottom: 12 }}>
-            Regular trips to the same place, but the amount changes each time.
+            Repeats at the same place, but the amount or the timing changes.
           </p>
           <div className="card">{recurring.map(renderItem)}</div>
         </>

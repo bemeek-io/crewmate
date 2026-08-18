@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { get, post, fmtCents, ApiError } from "../api/client";
 import type { SubscriptionSpend as Data } from "../api/types";
 import TxnList from "./TxnList";
-import { ChevronRightIcon, ChevronDownIcon } from "./Icons";
+import { ChevronRightIcon, ChevronDownIcon, RefreshIcon } from "./Icons";
 
 const RANGES = [
   { key: "1m", label: "1M" },
@@ -54,10 +54,23 @@ export default function SubscriptionSpend() {
 
   return (
     <>
-      <h2>Subscription spend</h2>
+      <div className="section-header">
+        <h2>Subscription spend</h2>
+        {/* Detection otherwise only re-runs when a replica picks up a Crew
+            connection, so classifications go stale after a change to how
+            things are detected, with no way to refresh them. */}
+        <button
+          className="icon-btn"
+          aria-label="Re-detect subscriptions"
+          title="Re-detect subscriptions"
+          disabled={rediscover.isPending}
+          onClick={() => rediscover.mutate()}
+        >
+          <RefreshIcon size={17} />
+        </button>
+      </div>
       <p className="muted small" style={{ marginTop: -8, marginBottom: 12 }}>
-        Only true subscriptions — same vendor, same amount, same point in the cycle — whatever
-        category they're filed under. Loan payments and irregular repeat spending are excluded.
+        Same amount, same point in the cycle — whatever category they're filed under.
       </p>
 
       <div className="card">
@@ -132,20 +145,11 @@ export default function SubscriptionSpend() {
               <p className="muted">No subscription charges in this window.</p>
             )}
 
-            {/* Detection otherwise only re-runs when a replica picks up a Crew
-                connection, so stored classifications go stale after a change to
-                how things are detected, with no way to refresh them. */}
-            <div className="row" style={{ marginTop: 12, gap: 10 }}>
-              <button
-                className="btn-small btn-secondary"
-                style={{ width: "auto" }}
-                disabled={rediscover.isPending}
-                onClick={() => rediscover.mutate()}
-              >
-                {rediscover.isPending ? "Re-detecting…" : "Re-detect subscriptions"}
-              </button>
-              {rediscoverResult && <span className="muted small">{rediscoverResult}</span>}
-            </div>
+            {rediscoverResult && (
+              <p className="muted small" style={{ marginTop: 10 }}>
+                {rediscoverResult}
+              </p>
+            )}
           </>
         )}
       </div>

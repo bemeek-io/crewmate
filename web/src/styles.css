@@ -550,6 +550,24 @@ select:focus {
   color: var(--text);
 }
 
+/* A bare icon action sitting in a section header. */
+.icon-btn {
+  width: auto;
+  margin: 0;
+  padding: 6px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  line-height: 0;
+  cursor: pointer;
+}
+.icon-btn:active {
+  color: var(--text);
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+}
+
 /* Cash flow: the category swatch beside each line. */
 .cat-dot {
   width: 9px;

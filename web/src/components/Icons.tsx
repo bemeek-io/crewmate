@@ -35,6 +35,15 @@ export const HomeIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const RefreshIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 11a8 8 0 0 0-13.7-5.7L4 7.5" />
+    <path d="M4 4v4h4" />
+    <path d="M4 13a8 8 0 0 0 13.7 5.7L20 16.5" />
+    <path d="M20 20v-4h-4" />
+  </Icon>
+);
+
 export const ChartIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 20V4" />

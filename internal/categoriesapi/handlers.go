@@ -38,6 +38,8 @@ func catJSON(c store.Category) map[string]any {
 		// System categories can be recolored but not renamed or removed.
 		"system_key": c.SystemKey,
 		"system":     c.SystemKey != nil,
+		// Withheld from auto-categorization; still usable by hand and by rules.
+		"exclude_from_llm": c.ExcludeFromLLM,
 	}
 }
 
@@ -107,8 +109,9 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name  string `json:"name"`
-		Color string `json:"color"`
+		Name           string `json:"name"`
+		Color          string `json:"color"`
+		ExcludeFromLLM bool   `json:"exclude_from_llm"`
 	}
 	if !httpx.Decode(w, r, &req) {
 		return
@@ -134,7 +137,7 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.UpdateCategory(ctx, famID, id, req.Name, req.Color); err != nil {
+	if err := h.Store.UpdateCategory(ctx, famID, id, req.Name, req.Color, req.ExcludeFromLLM); err != nil {
 		if store.IsUniqueViolation(err) {
 			httpx.Error(w, http.StatusConflict, "duplicate", "a category with that name already exists")
 			return

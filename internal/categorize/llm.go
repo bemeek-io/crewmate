@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -129,7 +130,12 @@ func categorySchema(categoryNames []string) map[string]any {
 // Every failure mode — disabled, API error, refusal, truncation, low
 // confidence, "unknown" — degrades to (,"", false): the transaction stays
 // uncategorized and the user gets the "tap to categorize" push instead.
-func (l *LLM) Categorize(ctx context.Context, payee, mcc string, amountCents int64, categoryNames []string) (string, bool) {
+// history is how the family has categorized this merchant before, with the
+// amounts. It is the closest thing here to learning: the model is stateless
+// between calls, so past decisions only inform it if they're in the prompt.
+// Amounts matter because for some merchants they carry the whole signal — a
+// $100 Costco charge is fuel, $12 is lunch, the rest is groceries.
+func (l *LLM) Categorize(ctx context.Context, payee, mcc string, amountCents int64, categoryNames []string, history []store.MerchantExample) (string, bool) {
 	if !l.Enabled || len(categoryNames) == 0 {
 		return "", false
 	}
@@ -152,10 +158,11 @@ Merchant category code: %s
 Amount: $%.2f (negative = money spent)
 
 Available categories: %s
-
+%s
 Pick the single best category. If no category clearly fits, answer "unknown".
 Use "high" confidence only when the merchant obviously belongs to the category.`,
-		payee, mccLine, float64(amountCents)/100, strings.Join(categoryNames, ", "))
+		payee, mccLine, float64(amountCents)/100, strings.Join(categoryNames, ", "),
+		historyBlock(history, categoryNames))
 
 	msg, err := l.Client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     "claude-haiku-4-5",
@@ -193,6 +200,43 @@ Use "high" confidence only when the merchant obviously belongs to the category.`
 	return res.Category, true
 }
 
+// historyBlock renders how this merchant has been categorized before.
+//
+// This is the whole of the model's "memory": it holds nothing between calls,
+// so the family's past decisions only reach it by being written into the
+// prompt. Showing the amounts alongside is what lets it work out that a
+// merchant splits by price rather than always meaning one thing.
+//
+// Examples naming a category the model can't pick — one excluded from
+// auto-categorization, or a system category — are dropped, so it isn't shown
+// answers it would be forbidden to give.
+func historyBlock(history []store.MerchantExample, allowed []string) string {
+	if len(history) == 0 {
+		return ""
+	}
+	permitted := make(map[string]bool, len(allowed))
+	for _, n := range allowed {
+		permitted[n] = true
+	}
+	var b strings.Builder
+	n := 0
+	for _, e := range history {
+		if !permitted[e.Category] {
+			continue
+		}
+		if n == 0 {
+			b.WriteString("\nHow this family has categorized this merchant before:\n")
+		}
+		fmt.Fprintf(&b, "- $%.2f: %s\n", math.Abs(float64(e.AmountCents))/100, e.Category)
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+	b.WriteString("Amounts often decide which category fits; weigh them.\n")
+	return b.String()
+}
+
 // LLMSelectable returns the category names the model is allowed to choose from.
 //
 // System categories (Subscription, Loan Payment) are excluded: they carry
@@ -200,10 +244,15 @@ Use "high" confidence only when the merchant obviously belongs to the category.`
 // series, which also records a rule so later charges match silently. Letting
 // the model guess them would label one-off purchases as subscriptions and
 // undercut the feature they belong to.
+//
+// Categories the family marked exclude_from_llm are withheld too. A catch-all
+// like "Misc" is the case that matters: auto-filing something there would make
+// it look handled while actually burying it, when what it needs is a person.
+// Such categories stay fully usable by hand and by rules.
 func LLMSelectable(cats []store.Category) []string {
 	names := make([]string, 0, len(cats))
 	for _, c := range cats {
-		if c.SystemKey != nil {
+		if c.SystemKey != nil || c.ExcludeFromLLM {
 			continue
 		}
 		names = append(names, c.Name)

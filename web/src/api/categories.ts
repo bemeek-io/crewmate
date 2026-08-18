@@ -54,6 +54,7 @@ export function useCreateCategory() {
           color: v.color ?? "",
           system: false,
           system_key: null,
+          exclude_from_llm: false,
         } satisfies Category,
       ].sort(byName),
     [["notes", "unmatched"], ["transactions"]]
@@ -62,17 +63,28 @@ export function useCreateCategory() {
 
 /** Edit a category's name and/or color. */
 export function useUpdateCategory() {
-  return useOptimistic<{ category: Category; name?: string; color?: string }>(
+  return useOptimistic<{
+    category: Category;
+    name?: string;
+    color?: string;
+    exclude_from_llm?: boolean;
+  }>(
     (v) =>
       patch(`/api/categories/${v.category.id}`, {
         name: v.name ?? v.category.name,
         color: v.color ?? v.category.color,
+        exclude_from_llm: v.exclude_from_llm ?? v.category.exclude_from_llm,
       }),
     (current, v) =>
       current
         .map((c) =>
           c.id === v.category.id
-            ? { ...c, name: v.name ?? c.name, color: v.color ?? c.color }
+            ? {
+                ...c,
+                name: v.name ?? c.name,
+                color: v.color ?? c.color,
+                exclude_from_llm: v.exclude_from_llm ?? c.exclude_from_llm,
+              }
             : c
         )
         .sort(byName),

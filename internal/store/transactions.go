@@ -264,6 +264,47 @@ func (s *Store) ListTransactions(ctx context.Context, familyID uuid.UUID, f TxnF
 	return out, rows.Err()
 }
 
+// MerchantExample is one past decision about a merchant: what the family
+// called it, and for how much.
+type MerchantExample struct {
+	Category    string
+	AmountCents int64
+}
+
+// MerchantCategoryHistory returns recent categorized transactions for a merchant,
+// newest first.
+//
+// Amount is included because for some merchants it *is* the signal — a $100
+// Costco charge is fuel, a $12 one is lunch, anything else is groceries. A
+// merchant→category mapping cannot express that; these examples let the model
+// infer it.
+func (s *Store) MerchantCategoryHistory(ctx context.Context, familyID uuid.UUID, merchantKey string, limit int) ([]MerchantExample, error) {
+	if merchantKey == "" {
+		return nil, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT c.name, t.amount_cents
+		FROM transactions t
+		JOIN categories c
+		  ON c.family_id = t.family_id AND lower(c.name) = lower(t.note)
+		WHERE t.family_id = $1 AND t.merchant_key = $2
+		ORDER BY t.occurred_at DESC
+		LIMIT $3`, familyID, merchantKey, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MerchantExample
+	for rows.Next() {
+		var e MerchantExample
+		if err := rows.Scan(&e.Category, &e.AmountCents); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // SuggestCategoryForMerchant returns the note most recently applied to this
 // merchant that names a known category. This replaces a merchant-rule table:
 // history *is* the cache, and it also learns from categories set in the Crew

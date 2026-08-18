@@ -76,6 +76,8 @@ export interface Category {
   /** Built-in categories can be recolored but not renamed or deleted. */
   system: boolean;
   system_key: string | null;
+  /** Withheld from auto-categorization; still usable by hand and by rules. */
+  exclude_from_llm: boolean;
 }
 
 export type MatchType = "contains" | "equals" | "prefix";

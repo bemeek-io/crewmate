@@ -19,6 +19,9 @@ func TestLLMCannotSelectSystemCategories(t *testing.T) {
 		{Name: "Subscription", SystemKey: key(store.SystemSubscription)},
 		{Name: "Dining"},
 		{Name: "Loan Payment", SystemKey: key(store.SystemLoanPayment)},
+		// A catch-all: auto-filing here would look like the transaction had
+		// been dealt with while actually burying it.
+		{Name: "Misc", ExcludeFromLLM: true},
 	}
 
 	got := LLMSelectable(cats)
@@ -39,7 +42,7 @@ func TestLLMCannotSelectSystemCategories(t *testing.T) {
 	enum := props["category"].(map[string]any)["enum"].([]any)
 	for _, v := range enum {
 		switch v.(string) {
-		case "Subscription", "Loan Payment":
+		case "Subscription", "Loan Payment", "Misc":
 			t.Errorf("system category %q is selectable in the schema enum", v)
 		}
 	}

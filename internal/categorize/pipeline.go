@@ -152,11 +152,17 @@ func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) ou
 		return outcome{category: cat, silent: true}
 	}
 
-	// Prior transactions for this merchant are the merchant→category cache;
-	// this also picks up categories set directly in the Crew app.
-	if name, ok, err := p.Store.SuggestCategoryForMerchant(ctx, t.FamilyID, t.MerchantKey); err != nil {
-		p.Log.Warn("merchant suggestion", zap.Error(err))
-	} else if ok {
+	// Prior decisions about this merchant, which also pick up categories set
+	// directly in the Crew app.
+	history, err := p.Store.MerchantCategoryHistory(ctx, t.FamilyID, t.MerchantKey, merchantHistoryLimit)
+	if err != nil {
+		p.Log.Warn("merchant history", zap.Error(err))
+	}
+	// Only copy the merchant's answer forward when it has actually settled on
+	// one. A merchant whose category depends on the amount must reach the
+	// model, which can weigh the amount; short-circuiting here is what made
+	// every Costco run inherit whatever the last one happened to be.
+	if name, ok := ConsistentCategory(history); ok {
 		p.queueNote(ctx, t, name, "history")
 		return outcome{category: name}
 	}
@@ -172,7 +178,9 @@ func (p *Pipeline) resolveCategory(ctx context.Context, t *store.Transaction) ou
 	if len(names) == 0 {
 		return outcome{}
 	}
-	name, ok := p.LLM.Categorize(ctx, t.Payee, t.MCC, t.AmountCents, names)
+	// The merchant's own history goes in as examples: it is what lets the
+	// model infer that this merchant's category depends on the amount.
+	name, ok := p.LLM.Categorize(ctx, t.Payee, t.MCC, t.AmountCents, names, history)
 	if !ok {
 		return outcome{}
 	}

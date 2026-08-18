@@ -65,6 +65,7 @@ export default function Categories() {
   const [editing, setEditing] = useState<Category | null>(null);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState("");
+  const [editExcluded, setEditExcluded] = useState(false);
   const [reassessResult, setReassessResult] = useState("");
   const qc = useQueryClient();
 
@@ -96,10 +97,16 @@ export default function Categories() {
     setEditing(c);
     setEditName(c.name);
     setEditColor(c.color || COLORS[0]);
+    setEditExcluded(c.exclude_from_llm);
   }
 
   function saveEdit(c: Category) {
-    update.mutate({ category: c, name: editName.trim() || c.name, color: editColor });
+    update.mutate({
+      category: c,
+      name: editName.trim() || c.name,
+      color: editColor,
+      exclude_from_llm: editExcluded,
+    });
     setEditing(null);
   }
 
@@ -212,6 +219,22 @@ export default function Categories() {
                 />
               )}
               <ColorPicker value={editColor} onChange={setEditColor} />
+              {/* Built-in categories are already withheld from the model, so
+                  the choice would be meaningless on them. */}
+              {!c.system && (
+                <label className="row" style={{ margin: "12px 0 0", gap: 10 }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: "auto", margin: 0 }}
+                    checked={editExcluded}
+                    onChange={(e) => setEditExcluded(e.target.checked)}
+                  />
+                  <span className="small">
+                    Never auto-assign this — for a catch-all like Misc, where filing something
+                    automatically would hide that it still needs a person
+                  </span>
+                </label>
+              )}
               <div className="row" style={{ gap: 8, marginTop: 12 }}>
                 <button
                   className="btn-small"

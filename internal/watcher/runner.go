@@ -215,11 +215,12 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 
 	ticker := time.NewTicker(r.WatchInterval)
 	defer ticker.Stop()
-	// Notes edited in the Crew app don't trigger the SDK's update handler, so
-	// reconcile them on their own cadence.
+	// Notes edited in the Crew app don't trigger the SDK's update handler, and
+	// neither does a pending transaction being cancelled, so reconcile both on
+	// their own cadence.
 	noteSync := time.NewTicker(noteSyncInterval)
 	defer noteSync.Stop()
-	r.syncNotes(ctx, client, log)
+	r.syncRecent(ctx, client, true, log)
 	for {
 		select {
 		case <-ctx.Done():
@@ -235,7 +236,7 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 		case <-r.writeCh:
 			r.drainWriteJobs(ctx, client, log)
 		case <-noteSync.C:
-			r.syncNotes(ctx, client, log)
+			r.syncRecent(ctx, client, false, log)
 		case <-ticker.C:
 			st, held, err := r.Store.ConnectionStatusFenced(ctx, r.Lease)
 			if err == nil {

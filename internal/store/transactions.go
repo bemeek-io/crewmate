@@ -171,6 +171,77 @@ func (s *Store) GetTransaction(ctx context.Context, familyID, id uuid.UUID) (*Tr
 	return t, err
 }
 
+// PendingForConnection lists a connection's still-pending transactions that
+// occurred at or after since and have been stored for at least minAge.
+//
+// It backs the vanished-transaction sweep, which is why it is scoped to one
+// connection rather than the household: only that connection's lease holder
+// holds the Crew list that can vouch for these rows. minAge keeps a transaction
+// ingested just after that list was fetched from looking like one that has
+// disappeared from it.
+func (s *Store) PendingForConnection(ctx context.Context, connID uuid.UUID, since time.Time, minAge time.Duration) ([]*Transaction, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
+		WHERE t.connection_id = $1 AND t.cleared_at IS NULL
+		  AND t.occurred_at >= $2 AND t.processed_at < now() - $3
+		ORDER BY t.occurred_at DESC`, connID, since, minAge)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Transaction
+	for rows.Next() {
+		t, err := scanTxn(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// OldestPendingForConnection reports when a connection's oldest still-pending
+// transaction occurred, and whether it has one old enough to judge at all.
+//
+// The sweep asks first: with nothing to sweep there is no reason to walk Crew's
+// list looking for gaps.
+func (s *Store) OldestPendingForConnection(ctx context.Context, connID uuid.UUID, minAge time.Duration) (time.Time, bool, error) {
+	var oldest *time.Time
+	err := s.Pool.QueryRow(ctx, `
+		SELECT min(occurred_at) FROM transactions
+		WHERE connection_id = $1 AND cleared_at IS NULL AND processed_at < now() - $2`,
+		connID, minAge).Scan(&oldest)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	if oldest == nil {
+		return time.Time{}, false, nil
+	}
+	return *oldest, true, nil
+}
+
+// DeleteVanishedTransaction removes a transaction Crew no longer reports, along
+// with any note write still queued against it.
+//
+// The two go together: a write against an ID Crew has forgotten can only fail,
+// and it would keep retrying until it hit the attempt cap.
+func (s *Store) DeleteVanishedTransaction(ctx context.Context, id, connID uuid.UUID, crewTxnID string) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	if _, err := tx.Exec(ctx, `DELETE FROM transactions WHERE id = $1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM crew_write_jobs
+		WHERE connection_id = $1 AND kind = $2 AND target_id = $3`,
+		connID, WriteNote, crewTxnID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // SweepUnnotified returns recent transactions that were ingested but never
 // notified — a safety net for items dropped between ingest and pipeline.
 func (s *Store) SweepUnnotified(ctx context.Context, limit int) ([]uuid.UUID, error) {

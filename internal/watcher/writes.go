@@ -51,8 +51,14 @@ func (r *Runner) drainWriteJobs(ctx context.Context, client *crew.Client, log *z
 			}
 			log.Warn("crew write failed", zap.String("kind", j.Kind),
 				zap.String("target", j.TargetID), zap.Int("attempts", j.Attempts), zap.Error(err))
-			if ferr := r.Store.FailWriteJob(ctx, j.ID, j.Attempts, err.Error(), maxWriteAttempts); ferr != nil {
+			abandoned, ferr := r.Store.FailWriteJob(ctx, j.ID, j.Attempts, err.Error(), maxWriteAttempts)
+			if ferr != nil {
 				log.Warn("record write failure", zap.Error(ferr))
+			} else if abandoned {
+				// The user saw this change applied optimistically and it is now
+				// quietly not happening, so say so loudly enough to find later.
+				log.Warn("giving up on crew write", zap.String("kind", j.Kind),
+					zap.String("target", j.TargetID), zap.Error(err))
 			}
 			continue
 		}

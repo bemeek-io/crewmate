@@ -77,10 +77,12 @@ func (s *Store) DeleteWriteJob(ctx context.Context, id uuid.UUID) error {
 
 // FailWriteJob records an attempt and backs the job off exponentially, giving
 // up (deleting) after maxAttempts so a permanently rejected write can't spin.
-func (s *Store) FailWriteJob(ctx context.Context, id uuid.UUID, attempts int, cause string, maxAttempts int) error {
+// It reports whether the job was abandoned, since that silently undoes a change
+// the user already saw applied and is worth logging.
+func (s *Store) FailWriteJob(ctx context.Context, id uuid.UUID, attempts int, cause string, maxAttempts int) (bool, error) {
 	if attempts+1 >= maxAttempts {
 		_, err := s.Pool.Exec(ctx, `DELETE FROM crew_write_jobs WHERE id = $1`, id)
-		return err
+		return true, err
 	}
 	backoff := time.Duration(1<<uint(attempts)) * time.Minute
 	if backoff > time.Hour {
@@ -90,7 +92,7 @@ func (s *Store) FailWriteJob(ctx context.Context, id uuid.UUID, attempts int, ca
 		UPDATE crew_write_jobs
 		SET attempts = attempts + 1, last_error = $2, run_after = now() + $3
 		WHERE id = $1`, id, truncate(cause, 500), backoff)
-	return err
+	return false, err
 }
 
 func truncate(s string, n int) string {

@@ -182,7 +182,7 @@ func (s *Store) GetTransaction(ctx context.Context, familyID, id uuid.UUID) (*Tr
 func (s *Store) PendingForConnection(ctx context.Context, connID uuid.UUID, since time.Time, minAge time.Duration) ([]*Transaction, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+txnCols+txnFrom+`
 		WHERE t.connection_id = $1 AND t.cleared_at IS NULL
-		  AND t.occurred_at >= $2 AND t.processed_at < now() - $3
+		  AND t.occurred_at >= $2 AND t.processed_at < now() - $3::interval
 		ORDER BY t.occurred_at DESC`, connID, since, minAge)
 	if err != nil {
 		return nil, err
@@ -208,7 +208,7 @@ func (s *Store) OldestPendingForConnection(ctx context.Context, connID uuid.UUID
 	var oldest *time.Time
 	err := s.Pool.QueryRow(ctx, `
 		SELECT min(occurred_at) FROM transactions
-		WHERE connection_id = $1 AND cleared_at IS NULL AND processed_at < now() - $2`,
+		WHERE connection_id = $1 AND cleared_at IS NULL AND processed_at < now() - $2::interval`,
 		connID, minAge).Scan(&oldest)
 	if err != nil {
 		return time.Time{}, false, err

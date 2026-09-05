@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -102,11 +103,17 @@ func exists(t *testing.T, st *store.Store, id uuid.UUID) bool {
 }
 
 // fakeCrew serves the SDK's cashTransactions query from a fixed list, newest
-// first, honouring `first`/`after` so the sweep's paging behaves as it would
-// against the real API.
-func fakeCrew(t *testing.T, txns []crew.CashTransaction) *crew.Client {
+// first, honouring `first`/`after` so paging behaves as it would against the
+// real API.
+//
+// An optional counter records how many Crew calls a run made, so a test can
+// hold a code path to a call budget rather than trusting it to stay cheap.
+func fakeCrew(t *testing.T, txns []crew.CashTransaction, calls ...*atomic.Int64) *crew.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(calls) > 0 {
+			calls[0].Add(1)
+		}
 		var req struct {
 			Variables struct {
 				First int    `json:"first"`
@@ -171,14 +178,14 @@ func runner(st *store.Store, familyID, connID uuid.UUID) *Runner {
 }
 
 // sweep fetches the first page the way syncRecent does, then sweeps.
-func sweep(t *testing.T, r *Runner, client *crew.Client, deep bool) {
+func sweep(t *testing.T, r *Runner, client *crew.Client) {
 	t.Helper()
 	ctx := context.Background()
 	page, err := client.CashTransactions(ctx, crew.CashTransactionsOptions{First: recentPageSize})
 	if err != nil {
 		t.Fatalf("fetch first page: %v", err)
 	}
-	r.sweepVanished(ctx, client, page, deep, zap.NewNop())
+	r.sweepVanished(ctx, page, zap.NewNop())
 }
 
 func crewTxn(id string, occurred time.Time) crew.CashTransaction {
@@ -206,7 +213,7 @@ func TestSweepDeletesCancelledPending(t *testing.T) {
 	})
 
 	client := fakeCrew(t, []crew.CashTransaction{crewTxn("live", now.Add(-24*time.Hour))})
-	sweep(t, runner(st, familyID, connID), client, true)
+	sweep(t, runner(st, familyID, connID), client)
 
 	if exists(t, st, gone) {
 		t.Error("cancelled pending transaction survived the sweep")
@@ -231,7 +238,7 @@ func TestSweepDropsQueuedNoteWrite(t *testing.T) {
 	}
 
 	client := fakeCrew(t, unrelatedPage(now))
-	sweep(t, runner(st, familyID, connID), client, true)
+	sweep(t, runner(st, familyID, connID), client)
 
 	jobs, err := st.TakeWriteJobs(context.Background(), connID, 10)
 	if err != nil {
@@ -268,7 +275,7 @@ func TestSweepLeavesAlone(t *testing.T) {
 			id := insertTxn(t, st, familyID, connID, c.txn)
 
 			client := fakeCrew(t, unrelatedPage(now))
-			sweep(t, runner(st, familyID, connID), client, true)
+			sweep(t, runner(st, familyID, connID), client)
 
 			if !exists(t, st, id) {
 				t.Errorf("sweep deleted a %s transaction", c.name)
@@ -277,9 +284,13 @@ func TestSweepLeavesAlone(t *testing.T) {
 	}
 }
 
-// A charge buried under newer activity is exactly the stuck row's situation: the
-// first page cannot see it, so only a deep sweep reaches it.
-func TestSweepReachesBuriedCharge(t *testing.T) {
+// The sweep is confined to the page syncRecent already fetched, and spends no
+// Crew calls of its own. It once chased a buried charge across twenty more
+// pages on every lease acquisition; leaving that row alone is the deliberate
+// price of not putting an unbounded walk on a timer. A cancelled charge is
+// caught on the first page in the case that actually occurs, since a charge is
+// cancelled within a day or so of being authorized.
+func TestSweepStaysOnTheFirstPage(t *testing.T) {
 	st := testStore(t)
 	familyID, connID := seed(t, st)
 	now := time.Now()
@@ -294,16 +305,14 @@ func TestSweepReachesBuriedCharge(t *testing.T) {
 		live = append(live, crewTxn("live-"+uuid.NewString(), now.Add(-time.Duration(i)*time.Hour)))
 	}
 
-	t.Run("shallow leaves it", func(t *testing.T) {
-		sweep(t, runner(st, familyID, connID), fakeCrew(t, live), false)
-		if !exists(t, st, buried) {
-			t.Error("a shallow sweep deleted a transaction it could not see")
-		}
-	})
-	t.Run("deep reaches it", func(t *testing.T) {
-		sweep(t, runner(st, familyID, connID), fakeCrew(t, live), true)
-		if exists(t, st, buried) {
-			t.Error("deep sweep did not reach the buried charge")
-		}
-	})
+	var calls atomic.Int64
+	sweep(t, runner(st, familyID, connID), fakeCrew(t, live, &calls))
+
+	if !exists(t, st, buried) {
+		t.Error("the sweep deleted a transaction it never actually looked at")
+	}
+	// One call, and it is the page sweep() fetched — the sweep itself adds none.
+	if got := calls.Load(); got != 1 {
+		t.Errorf("crew calls = %d, want 1: the sweep must not page on its own", got)
+	}
 }

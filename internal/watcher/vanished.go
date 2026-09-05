@@ -16,9 +16,6 @@ const (
 	// fetching a page and reading the database, in which a genuinely new
 	// transaction would be missing from the former but present in the latter.
 	vanishGrace = time.Hour
-	// vanishPageCap bounds how far past the first page a deep sweep will chase a
-	// buried pending transaction.
-	vanishPageCap = 20
 )
 
 // sweepVanished deletes pending transactions Crew has stopped reporting.
@@ -36,50 +33,28 @@ const (
 // transaction missing from a page is far more likely to mean the page is wrong
 // than that the money moved back.
 //
-// deep allows walking past the first page to reach a pending transaction newer
-// activity has buried. Only the sweep at session start does: a charge is
-// cancelled within a day or so of being authorized, long before a hundred
-// transactions bury it, so the recurring sweeps would pay for that walk on every
-// tick and almost never find anything. What they would find, they find on the
-// first page.
-func (r *Runner) sweepVanished(ctx context.Context, client *crew.Client, first *crew.CashTransactionPage, deep bool, log *zap.Logger) {
+// The sweep judges only the page syncRecent already fetched, and never makes a
+// Crew call of its own. It used to walk up to twenty further pages at every
+// lease acquisition to reach a pending charge buried under newer activity —
+// twenty requests, on a timer, for something the first page almost always
+// covers, against an API that is not ours to spend. A charge is cancelled
+// within a day or so of being authorized, long before a hundred transactions
+// bury it. A deeper search belongs behind an explicit user action, not here.
+func (r *Runner) sweepVanished(ctx context.Context, first *crew.CashTransactionPage, log *zap.Logger) {
 	floor, ok := pageFloor(first.Transactions, first.PageInfo.HasNextPage)
 	if !ok {
 		return // an empty page vouches for nothing
 	}
-	// Nothing old enough to judge means no sweep, and no paging — which is the
-	// normal case, so it costs one indexed query.
-	oldest, stale, err := r.Store.OldestPendingForConnection(ctx, r.Conn.ID, vanishGrace)
-	if err != nil {
+	// Nothing old enough to judge means no sweep — the normal case, and it costs
+	// one indexed query.
+	if _, stale, err := r.Store.OldestPendingForConnection(ctx, r.Conn.ID, vanishGrace); err != nil {
 		log.Warn("oldest pending lookup", zap.Error(err))
 		return
-	}
-	if !stale {
+	} else if !stale {
 		return
 	}
 
 	seen := crewIDs(first.Transactions)
-	cursor, more := first.PageInfo.EndCursor, first.PageInfo.HasNextPage
-	// Keep walking while something stored sits below what the walk has reached.
-	for pages := 0; deep && more && !floor.IsZero() && oldest.Before(floor) && pages < vanishPageCap; pages++ {
-		page, err := client.CashTransactions(ctx, crew.CashTransactionsOptions{First: recentPageSize, After: cursor})
-		if err != nil {
-			// A walk with a hole in it cannot vouch for anything below the hole,
-			// and the part above it will be swept on the next pass anyway.
-			log.Warn("vanish sweep paging failed", zap.Error(err))
-			return
-		}
-		for _, tx := range page.Transactions {
-			seen[tx.ID] = struct{}{}
-		}
-		cursor, more = page.PageInfo.EndCursor, page.PageInfo.HasNextPage
-		// An empty page leaves the floor where it was: it adds no coverage, and
-		// the previous floor already describes how deep the walk reached.
-		if f, ok := pageFloor(page.Transactions, more); ok {
-			floor = f
-		}
-	}
-
 	local, err := r.Store.PendingForConnection(ctx, r.Conn.ID, floor, vanishGrace)
 	if err != nil {
 		log.Warn("load pending for vanish sweep", zap.Error(err))

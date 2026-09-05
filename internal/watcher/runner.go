@@ -220,7 +220,7 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 	// their own cadence.
 	noteSync := time.NewTicker(noteSyncInterval)
 	defer noteSync.Stop()
-	r.syncRecent(ctx, client, true, log)
+	r.syncRecent(ctx, client, log)
 	for {
 		select {
 		case <-ctx.Done():
@@ -236,7 +236,7 @@ func (r *Runner) session(ctx context.Context, token string, log *zap.Logger) err
 		case <-r.writeCh:
 			r.drainWriteJobs(ctx, client, log)
 		case <-noteSync.C:
-			r.syncRecent(ctx, client, false, log)
+			r.syncRecent(ctx, client, log)
 		case <-ticker.C:
 			st, held, err := r.Store.ConnectionStatusFenced(ctx, r.Lease)
 			if err == nil {

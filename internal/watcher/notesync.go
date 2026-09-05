@@ -22,9 +22,8 @@ const (
 // syncRecent pulls the newest page of Crew transactions and reconciles the two
 // things the watch subscription never reports: note edits, and disappearances.
 //
-// deep is passed through to the disappearance sweep, which is the only part that
-// may look past this page.
-func (r *Runner) syncRecent(ctx context.Context, client *crew.Client, deep bool, log *zap.Logger) {
+// Exactly one Crew call, always: both consumers work from this single page.
+func (r *Runner) syncRecent(ctx context.Context, client *crew.Client, log *zap.Logger) {
 	page, err := client.CashTransactions(ctx, crew.CashTransactionsOptions{First: recentPageSize})
 	if err != nil {
 		r.setLastErr(err)
@@ -32,7 +31,7 @@ func (r *Runner) syncRecent(ctx context.Context, client *crew.Client, deep bool,
 		return
 	}
 	r.syncNotes(ctx, page.Transactions, log)
-	r.sweepVanished(ctx, client, page, deep, log)
+	r.sweepVanished(ctx, page, log)
 }
 
 // syncNotes reconciles Crew's note field into the local cache.

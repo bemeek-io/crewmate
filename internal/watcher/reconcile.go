@@ -39,11 +39,12 @@ func (r *Runner) reconcile(ctx context.Context, client *crew.Client, log *zap.Lo
 		for _, tx := range page.Transactions {
 			oldest = tx.OccurredAt
 			// A first run back-fills a deliberate slice of history and stops at
-			// its horizon. A catch-up run ingests whatever it fetched, horizon
-			// or not: last_polled_at records when we last spoke to Crew, not
-			// what we successfully stored, so a transaction missing from before
-			// it is precisely the one that needs restoring. Re-ingesting costs
-			// nothing — the insert is idempotent.
+			// its horizon. A catch-up run ingests everything on the pages it
+			// fetched, horizon or not: last_polled_at records when we last spoke
+			// to Crew, not what we successfully stored, so a row missing from
+			// before it is exactly the one worth restoring. This costs no extra
+			// Crew calls — the page is already in hand and the insert is
+			// idempotent — which is the only reason it is safe to do here.
 			if firstRun && tx.OccurredAt.Before(horizon) {
 				continue
 			}
@@ -56,14 +57,13 @@ func (r *Runner) reconcile(ctx context.Context, client *crew.Client, log *zap.Lo
 		}
 		inserted += freshInPage
 
-		// Stop once a page is both past the horizon and telling us nothing new.
-		// Still turning up fresh transactions past the horizon means there is a
-		// hole below it, so follow the hole rather than stopping on top of it —
-		// otherwise anything lost before the last poll can never be recovered,
-		// because no other path inserts: the SDK's baseline poll absorbs the
-		// current page silently, and the note sync only updates rows that exist.
+		// A catch-up run stops at the horizon, full stop. Chasing a gap below it
+		// would mean an unbounded walk on a path no user asked for, and Crew's
+		// API is not ours to spend that freely — healing is limited to the pages
+		// this run was going to fetch anyway.
 		done := !page.PageInfo.HasNextPage ||
-			(freshInPage == 0 && !oldest.IsZero() && oldest.Before(horizon))
+			(freshInPage == 0 && !oldest.IsZero() && oldest.Before(horizon)) ||
+			(!firstRun && !oldest.IsZero() && oldest.Before(horizon))
 		if done {
 			break
 		}

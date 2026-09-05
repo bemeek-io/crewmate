@@ -43,7 +43,7 @@ const (
 // tick and almost never find anything. What they would find, they find on the
 // first page.
 func (r *Runner) sweepVanished(ctx context.Context, client *crew.Client, first *crew.CashTransactionPage, deep bool, log *zap.Logger) {
-	floor, ok := pageFloor(first.Transactions, recentPageSize)
+	floor, ok := pageFloor(first.Transactions, first.PageInfo.HasNextPage)
 	if !ok {
 		return // an empty page vouches for nothing
 	}
@@ -60,9 +60,6 @@ func (r *Runner) sweepVanished(ctx context.Context, client *crew.Client, first *
 
 	seen := crewIDs(first.Transactions)
 	cursor, more := first.PageInfo.EndCursor, first.PageInfo.HasNextPage
-	if !more {
-		floor = time.Time{} // the walk reached the end: it covers all of history
-	}
 	// Keep walking while something stored sits below what the walk has reached.
 	for pages := 0; deep && more && !floor.IsZero() && oldest.Before(floor) && pages < vanishPageCap; pages++ {
 		page, err := client.CashTransactions(ctx, crew.CashTransactionsOptions{First: recentPageSize, After: cursor})
@@ -75,12 +72,11 @@ func (r *Runner) sweepVanished(ctx context.Context, client *crew.Client, first *
 		for _, tx := range page.Transactions {
 			seen[tx.ID] = struct{}{}
 		}
-		if f, ok := pageFloor(page.Transactions, recentPageSize); ok {
-			floor = f
-		}
 		cursor, more = page.PageInfo.EndCursor, page.PageInfo.HasNextPage
-		if !more {
-			floor = time.Time{}
+		// An empty page leaves the floor where it was: it adds no coverage, and
+		// the previous floor already describes how deep the walk reached.
+		if f, ok := pageFloor(page.Transactions, more); ok {
+			floor = f
 		}
 	}
 
@@ -112,15 +108,21 @@ func crewIDs(page []crew.CashTransaction) map[string]struct{} {
 // pageFloor is the oldest occurrence time a page of Crew transactions vouches
 // for, and whether it vouches for anything at all.
 //
-// A full page only speaks for the window it covers: older than its oldest entry
-// means the page ran out, not that the transaction is gone. A page that came
-// back short of the limit is the end of the list, so it speaks for the rest of
-// history — reported as the zero time, which is before everything.
-func pageFloor(page []crew.CashTransaction, limit int) (time.Time, bool) {
+// A page only speaks for the window it covers: older than its oldest entry
+// means the page ran out, not that the transaction is gone. Only the end of the
+// list speaks for the rest of history — reported as the zero time, which is
+// before everything.
+//
+// hasNextPage, not the page's length, is what says the list ended. A short page
+// is not proof: Crew is free to return fewer rows than `first` asked for and
+// still report more behind them, and reading that as the end of history would
+// let a single truncated response condemn every stored pending transaction the
+// page happens not to mention.
+func pageFloor(page []crew.CashTransaction, hasNextPage bool) (time.Time, bool) {
 	if len(page) == 0 {
 		return time.Time{}, false
 	}
-	if len(page) < limit {
+	if !hasNextPage {
 		return time.Time{}, true
 	}
 	oldest := page[0].OccurredAt

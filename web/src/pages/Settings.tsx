@@ -137,18 +137,32 @@ export default function Settings() {
               ? "connected"
               : crewStatus === "needs_relogin"
                 ? "reconnect needed"
-                : crewStatus}
+                : crewStatus === "disabled"
+                  ? "disconnected"
+                  : "not connected"}
           </span>
         </div>
-        {crewStatus === "needs_relogin" && (
-          <Link to="/login">
-            <button style={{ marginBottom: 10 }}>Reconnect Crew account</button>
-          </Link>
-        )}
-        {crewStatus === "active" && (
+        {/* Every state that isn't connected needs a way back: signing in again
+            re-activates the connection and back-fills whatever was missed
+            while it was off. Offering this only for needs_relogin left a
+            disconnect with no way to undo it. */}
+        {crewStatus === "active" ? (
           <button className="btn-danger" onClick={onDisconnect}>
             Disconnect Crew account
           </button>
+        ) : (
+          <>
+            <Link to="/login">
+              <button style={{ marginBottom: 10 }}>
+                {crewStatus === "none" ? "Connect Crew account" : "Reconnect Crew account"}
+              </button>
+            </Link>
+            <p className="muted small">
+              {crewStatus === "needs_relogin"
+                ? "Crewmate lost access to your Crew account. Sign in again to keep tracking transactions."
+                : "Sign in again to resume tracking. Transactions that landed while you were disconnected are picked up automatically."}
+            </p>
+          </>
         )}
       </div>
 

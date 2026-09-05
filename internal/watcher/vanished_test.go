@@ -33,24 +33,48 @@ func ids(txns []*store.Transaction) []string {
 	return out
 }
 
-// A full page speaks only for its own window; a short page is the whole list
-// and so speaks for everything.
+// A page with more behind it speaks only for its own window; the last page is
+// the end of the list and so speaks for everything.
 func TestPageFloor(t *testing.T) {
-	full := crewTxns([]string{"a", "b", "c"}, []int{0, 5, 2})
-	floor, ok := pageFloor(full, 3)
+	page := crewTxns([]string{"a", "b", "c"}, []int{0, 5, 2})
+	floor, ok := pageFloor(page, true)
 	if !ok {
-		t.Fatal("full page vouches for nothing")
+		t.Fatal("page vouches for nothing")
 	}
 	if !floor.Equal(at(5)) {
 		t.Errorf("floor = %v, want oldest entry %v", floor, at(5))
 	}
 
-	if floor, ok := pageFloor(full, 100); !ok || !floor.IsZero() {
-		t.Errorf("short page: floor = %v, ok = %v, want zero time and ok", floor, ok)
+	if floor, ok := pageFloor(page, false); !ok || !floor.IsZero() {
+		t.Errorf("last page: floor = %v, ok = %v, want zero time and ok", floor, ok)
 	}
 
-	if _, ok := pageFloor(nil, 100); ok {
+	if _, ok := pageFloor(nil, false); ok {
 		t.Error("empty page vouches for something")
+	}
+}
+
+// A short page is not the end of the list. Crew may return fewer rows than
+// asked for and still report more behind them; reading that as the whole of
+// history would sweep every stored pending transaction the page omits.
+func TestPageFloorShortPageIsNotTheEnd(t *testing.T) {
+	short := crewTxns([]string{"a", "b"}, []int{0, 4})
+	floor, ok := pageFloor(short, true)
+	if !ok {
+		t.Fatal("short page vouches for nothing")
+	}
+	if floor.IsZero() {
+		t.Fatal("short page claimed the whole of history")
+	}
+	if !floor.Equal(at(4)) {
+		t.Errorf("floor = %v, want oldest entry %v", floor, at(4))
+	}
+
+	// The guarantee that matters: a pending charge older than the short page
+	// survives, rather than being read as cancelled.
+	local := []*store.Transaction{localTxn("a", 0), localTxn("buried", 30)}
+	if got := vanished(crewIDs(short), local, floor); len(got) != 0 {
+		t.Errorf("vanished() = %v, want none", ids(got))
 	}
 }
 

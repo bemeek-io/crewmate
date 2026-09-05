@@ -151,13 +151,20 @@ func fakeCrew(t *testing.T, txns []crew.CashTransaction, calls ...*atomic.Int64)
 		if len(page) > 0 {
 			endCursor = page[len(page)-1].ID
 		}
+		// Must mirror the SDK's real response path. Crew moved the connection
+		// from currentUser down onto the account; a fake still answering at the
+		// old path would decode to an empty page and quietly pass every test
+		// that only checks nothing was deleted.
 		resp := map[string]any{"data": map[string]any{
 			"currentUser": map[string]any{
-				"cashTransactions": map[string]any{
-					"edges": edges,
-					"pageInfo": map[string]any{
-						"endCursor":   endCursor,
-						"hasNextPage": end < len(txns),
+				"spendAccount": map[string]any{
+					"cashTransactions": map[string]any{
+						"total": len(txns),
+						"edges": edges,
+						"pageInfo": map[string]any{
+							"endCursor":   endCursor,
+							"hasNextPage": end < len(txns),
+						},
 					},
 				},
 			},

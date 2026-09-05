@@ -4,14 +4,8 @@ github.com/anthropics/anthropic-sdk-go v1.63.1 h1:M9dIoZzUWB453ulVpBkQp3FX0769ud
 github.com/anthropics/anthropic-sdk-go v1.63.1/go.mod h1:3EfIfmFqxH6rbiLcIP4tPFyXL/IHakx2wDG4OU+TIEI=
 github.com/bahlo/generic-list-go v0.2.0 h1:5sz/EEAK+ls5wF+NeqDpk5+iNdMDXrh3z3nPnH1Wvgk=
 github.com/bahlo/generic-list-go v0.2.0/go.mod h1:2KvAjgMlE5NNynlg/5iLrrCCZ2+5xWbdbCW3pNTGyYg=
-github.com/bemeek-io/go-crew v0.0.0-20260816221501-f21107fb3f9b h1:Er2xybMQR3v+hxIsFYWpeL8HDbr34gOcOELhQ080sqI=
-github.com/bemeek-io/go-crew v0.0.0-20260816221501-f21107fb3f9b/go.mod h1:9wR5xKkZ0jrfdeo/mjSsE2ppvEQjt9K8FqQuQPQP0Jc=
-github.com/bemeek-io/go-crew v0.0.0-20260817143800-365226fc6239 h1:bY/+HH5o/UGz4Jkhh5VSacT1LvJPITD/aTDnSlOcSz8=
-github.com/bemeek-io/go-crew v0.0.0-20260817143800-365226fc6239/go.mod h1:9wR5xKkZ0jrfdeo/mjSsE2ppvEQjt9K8FqQuQPQP0Jc=
-github.com/bemeek-io/go-crew v0.0.0-20260817172336-a726f1623ca5 h1:vYAcnYyR0UJV6Xp8MgI++UPqyQG28+DyNtRgERd7Rlw=
-github.com/bemeek-io/go-crew v0.0.0-20260817172336-a726f1623ca5/go.mod h1:9wR5xKkZ0jrfdeo/mjSsE2ppvEQjt9K8FqQuQPQP0Jc=
-github.com/bemeek-io/go-crew v0.0.0-20260817175547-351563f1b538 h1:1SX12DxqNK8GIDaj8J85OM0CboOl5va7nQwrhProouU=
-github.com/bemeek-io/go-crew v0.0.0-20260817175547-351563f1b538/go.mod h1:9wR5xKkZ0jrfdeo/mjSsE2ppvEQjt9K8FqQuQPQP0Jc=
+github.com/bemeek-io/go-crew v0.0.0-20260905213829-95776dabcb11 h1:Tq6qxu0lQDs3s/9/JW+sMPb4hbJDXM4gB+h+vDb7v+o=
+github.com/bemeek-io/go-crew v0.0.0-20260905213829-95776dabcb11/go.mod h1:9wR5xKkZ0jrfdeo/mjSsE2ppvEQjt9K8FqQuQPQP0Jc=
 github.com/buger/jsonparser v1.1.2 h1:frqHqw7otoVbk5M8LlE/L7HTnIq2v9RX6EJ48i9AxJk=
 github.com/buger/jsonparser v1.1.2/go.mod h1:6RYKKt7H4d4+iWqouImQ9R2FZql3VbhNgx27UK13J/0=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

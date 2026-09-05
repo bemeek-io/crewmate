@@ -38,21 +38,32 @@ func (r *Runner) reconcile(ctx context.Context, client *crew.Client, log *zap.Lo
 		var oldest time.Time
 		for _, tx := range page.Transactions {
 			oldest = tx.OccurredAt
-			if tx.OccurredAt.Before(horizon) {
+			// A first run back-fills a deliberate slice of history and stops at
+			// its horizon. A catch-up run ingests whatever it fetched, horizon
+			// or not: last_polled_at records when we last spoke to Crew, not
+			// what we successfully stored, so a transaction missing from before
+			// it is precisely the one that needs restoring. Re-ingesting costs
+			// nothing — the insert is idempotent.
+			if firstRun && tx.OccurredAt.Before(horizon) {
 				continue
 			}
 			// Notify only for recent arrivals; process() additionally
-			// suppresses anything older than the notify window, so a first-run
-			// backfill never produces a notification storm.
+			// suppresses anything older than the notify window, so neither a
+			// first-run backfill nor a healed gap produces a notification storm.
 			if r.ingest(ctx, tx, !firstRun, log) {
 				freshInPage++
 			}
 		}
 		inserted += freshInPage
 
+		// Stop once a page is both past the horizon and telling us nothing new.
+		// Still turning up fresh transactions past the horizon means there is a
+		// hole below it, so follow the hole rather than stopping on top of it —
+		// otherwise anything lost before the last poll can never be recovered,
+		// because no other path inserts: the SDK's baseline poll absorbs the
+		// current page silently, and the note sync only updates rows that exist.
 		done := !page.PageInfo.HasNextPage ||
-			(freshInPage == 0 && !oldest.IsZero() && oldest.Before(horizon)) ||
-			(!firstRun && !oldest.IsZero() && oldest.Before(horizon))
+			(freshInPage == 0 && !oldest.IsZero() && oldest.Before(horizon))
 		if done {
 			break
 		}

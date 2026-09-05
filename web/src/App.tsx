@@ -5,6 +5,7 @@ import { get } from "./api/client";
 import type { Me } from "./api/types";
 import { syncPushSubscription } from "./push";
 import { useRefreshOnResume } from "./api/refresh";
+import { syncHealth } from "./api/sync";
 import {
   HomeIcon,
   ActivityIcon,
@@ -97,6 +98,11 @@ export default function App() {
     queryKey: ["me"],
     queryFn: () => get<Me>("/api/me"),
     retry: false,
+    // Sync health decays with the clock, so a warning that only appears on
+    // reopen would sit invisible on an app left open — which is exactly when
+    // someone is waiting for a transaction to land. Cheap to poll: /api/me
+    // reads Postgres and never touches Crew.
+    refetchInterval: 60_000,
   });
 
   useEffect(() => {
@@ -148,6 +154,16 @@ export default function App() {
           <div className="banner">
             Crewmate lost access to your Crew account.{" "}
             <a href="/login">Sign in again</a> to keep tracking transactions.
+          </div>
+        )}
+        {/* A connection can be perfectly authorized and still not be syncing —
+            status only tracks whether Crew accepts the token. Say so here
+            rather than leaving a silently frozen Activity list to be
+            discovered, which is how this went unnoticed for days once. */}
+        {syncHealth(me.data).stale && (
+          <div className="banner">
+            Crewmate hasn’t synced with Crew in over an hour — new transactions may be
+            missing. <NavLink to="/settings">Settings</NavLink> shows the last sync.
           </div>
         )}
         <Routes>

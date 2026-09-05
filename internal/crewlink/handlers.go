@@ -54,6 +54,13 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	if conn != nil {
 		out["crew_status"] = string(conn.Status)
+		// When the watcher last completed a poll, which is the only evidence
+		// that syncing actually works. Status alone cannot say: it reports
+		// whether Crew still accepts our token, so it reads "active" through
+		// any failure that is not an auth failure — a changed API among them,
+		// which once left ingest dead for days with nothing on screen to show
+		// for it. A client that can see this can say so.
+		out["last_polled_at"] = conn.LastPolledAt
 	}
 	if m != nil {
 		// The household is identity, not something the client can act on —

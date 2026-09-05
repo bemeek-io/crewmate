@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { get, post, del } from "../api/client";
 import type { Me } from "../api/types";
+import { syncHealth } from "../api/sync";
 import { enablePush, needsInstallForPush, pushSupported } from "../push";
 import { BellIcon, ShareIcon } from "../components/Icons";
 
@@ -75,6 +76,7 @@ export default function Settings() {
   }
 
   const crewStatus = me.data?.crew_status ?? "none";
+  const sync = syncHealth(me.data);
 
   return (
     <>
@@ -142,6 +144,23 @@ export default function Settings() {
                   : "not connected"}
           </span>
         </div>
+        {/* Status says whether Crew still takes our token; this says whether
+            transactions are actually arriving. They can disagree for days. */}
+        {crewStatus === "active" && (
+          <div className="row spread" style={{ marginBottom: 10 }}>
+            <span>Last synced</span>
+            <span className={sync.stale ? "pill warn" : "muted small"}>
+              {sync.awaitingFirst ? "waiting for first sync…" : sync.lastSyncedLabel}
+            </span>
+          </div>
+        )}
+        {sync.stale && (
+          <p className="muted small" style={{ marginBottom: 10 }}>
+            Crewmate hasn’t synced with Crew in over an hour, so new transactions may be
+            missing. It retries on its own — if this doesn’t clear, the server logs will say
+            why.
+          </p>
+        )}
         {/* Every state that isn't connected needs a way back: signing in again
             re-activates the connection and back-fills whatever was missed
             while it was off. Offering this only for needs_relogin left a

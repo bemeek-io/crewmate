@@ -1,6 +1,8 @@
 export interface Me {
   user: { id: string; first_name: string; last_name: string };
   crew_status: "none" | "active" | "needs_relogin" | "disabled";
+  // When the watcher last completed a poll. Null before the first one lands.
+  last_polled_at?: string | null;
   family_id?: string;
 }
 

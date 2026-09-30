@@ -119,9 +119,10 @@ func TestSubscriptions(t *testing.T) {
 func TestHabits(t *testing.T) {
 	dining := newCat("Dining")
 	in := Input{Now: testNow, Months: testMonths}
-	// Five of the last six full months; lately $80, $90, $100.
+	// Five of the last six full months; lately $80, $90, $100. Steady
+	// before that, so Dining as a whole isn't rising.
 	in.Rows = append(in.Rows, spend("doordash", &dining,
-		40_00, 40_00, 40_00, 40_00, 40_00, 40_00, 60_00, 0, 70_00, 80_00, 90_00, 100_00, 20_00)...)
+		90_00, 90_00, 90_00, 90_00, 90_00, 90_00, 90_00, 0, 90_00, 80_00, 90_00, 100_00, 20_00)...)
 	// Only twice in six months: not a habit.
 	in.Rows = append(in.Rows, spend("steakhouse", &dining,
 		0, 0, 0, 0, 0, 0, 0, 0, 120_00, 0, 0, 130_00, 0)...)
@@ -289,5 +290,39 @@ func TestRuleVerdict(t *testing.T) {
 		if got := ruleVerdict(c.s); got != c.want {
 			t.Errorf("ruleVerdict(%q / %q) = %s, want %s", c.s.Title, c.s.CategoryName, got, c.want)
 		}
+	}
+}
+
+// A merchant inside a rising category is part of that category's suggestion,
+// not a second one: both would claim the same dollars.
+func TestHabitFoldsIntoRisingCategory(t *testing.T) {
+	home := newCat("Home Improvement")
+	venmoCat := newCat("Venmo")
+	in := Input{Now: testNow, Months: testMonths,
+		Profiles: map[string]store.MerchantProfile{"homedepot": {Payee: "The Home Depot"}}}
+	// Home Depot doubles; Lowe's stays put; both are in Home Improvement.
+	in.Rows = append(in.Rows, spend("homedepot", &home,
+		600_00, 600_00, 600_00, 600_00, 600_00, 600_00, 600_00, 600_00, 600_00, 1300_00, 1300_00, 1300_00, 200_00)...)
+	in.Rows = append(in.Rows, spend("lowes", &home, flat(100_00)...)...)
+	// A merchant with a category of its own name.
+	in.Rows = append(in.Rows, spend("venmo", &venmoCat,
+		300_00, 300_00, 300_00, 300_00, 300_00, 300_00, 300_00, 300_00, 300_00, 650_00, 700_00, 700_00, 100_00)...)
+
+	got := Detect(in)
+	absent(t, got, "merchant:homedepot")
+	absent(t, got, "merchant:venmo")
+	h := find(t, got, "category:"+home.id.String())
+	if len(h.Drivers) == 0 || h.Drivers[0].Payee != "The Home Depot" {
+		t.Errorf("home improvement drivers = %+v, want Home Depot first", h.Drivers)
+	}
+	if h.SavingsCents != 12*(1400_00-700_00) {
+		t.Errorf("home improvement savings = %d, want back-to-baseline", h.SavingsCents)
+	}
+	find(t, got, "category:"+venmoCat.id.String())
+	// Lowe's is steady and mostly in the rising category too: folded, not
+	// flagged on its own.
+	absent(t, got, "merchant:lowes")
+	if len(got) != 2 {
+		t.Errorf("want exactly the two categories, got %+v", got)
 	}
 }

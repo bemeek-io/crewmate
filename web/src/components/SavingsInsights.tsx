@@ -41,7 +41,12 @@ function summary(s: Suggestion): string {
       return `About ${dollars(s.pace_cents)}/mo lately`;
     case "rising": {
       const pct = Math.round(((s.pace_cents - s.baseline_cents) / s.baseline_cents) * 100);
-      return `Up ${pct}% to ${dollars(s.pace_cents)}/mo`;
+      const rise = s.pace_cents - s.baseline_cents;
+      // Name the merchant when one accounts for most of the increase — it's
+      // the thing to act on, and it's no longer a card of its own.
+      const top = s.drivers?.[0];
+      const mostly = top && top.delta_cents * 2 >= rise && top.payee !== s.title ? `, mostly ${top.payee}` : "";
+      return `Up ${pct}% to ${dollars(s.pace_cents)}/mo${mostly}`;
     }
   }
 }
@@ -411,11 +416,11 @@ export default function SavingsInsights({ focus }: { focus?: string | null }) {
   const d = q.data;
   const worth = d?.suggestions.filter((s) => s.verdict !== "essential") ?? [];
   const needs = d?.suggestions.filter((s) => s.verdict === "essential") ?? [];
-  // Merchant suggestions never overlap each other; a rising category can
-  // contain them, so it stays out of the total rather than count twice.
-  const potential = worth
-    .filter((s) => s.subject_type === "merchant")
-    .reduce((sum, s) => sum + s.savings_cents, 0);
+  // These add up without counting a dollar twice: regular spend inside a
+  // rising category is folded into it on the server, and a subscription's
+  // steady cost sits in both the category's earlier level and its pace, so
+  // it isn't part of the rise.
+  const potential = worth.reduce((sum, s) => sum + s.savings_cents, 0);
 
   return (
     <>

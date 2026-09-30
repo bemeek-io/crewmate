@@ -210,14 +210,7 @@ func Detect(in Input) []Suggestion {
 		return key, ""
 	}
 	withCategory := func(s *Suggestion, merchant string) {
-		var best string
-		var bestCents int64 = -1
-		for ck, c := range merchantCat[merchant] {
-			if c > bestCents || (c == bestCents && ck < best) {
-				best, bestCents = ck, c
-			}
-		}
-		if ci, ok := cats[best]; ok {
+		if ci, ok := cats[dominantCategory(merchantCat[merchant])]; ok {
 			s.CategoryID, s.CategoryName, s.Color = ci.id, ci.name, ci.color
 		}
 	}
@@ -279,43 +272,9 @@ func Detect(in Input) []Suggestion {
 		out = append(out, s)
 	}
 
-	// Habits: merchants paid most months, at a pace worth noticing. Needs
-	// enough history to tell a habit from a new arrival.
-	if history <= full-6 {
-		for key, m := range byMerchant {
-			if subscribed[key] || dismissed[store.SubjectMerchant+":"+key] {
-				continue
-			}
-			active := 0
-			for i := full - 6; i < full; i++ {
-				if m.cents[i] > 0 {
-					active++
-				}
-			}
-			pace := avg(m.cents[paceFrom:full])
-			stillGoing := m.cents[full-2]+m.cents[full-1]+m.cents[full] > 0
-			if active < minHabitMonths || pace < minHabitPaceCents || !stillGoing {
-				continue
-			}
-			title, mcc := payee(key)
-			s := Suggestion{
-				Kind:           KindHabit,
-				SubjectType:    store.SubjectMerchant,
-				SubjectKey:     key,
-				Title:          title,
-				MCC:            mcc,
-				PaceCents:      pace,
-				ProjectedCents: pace * 12,
-				SavingsCents:   pace * 12,
-			}
-			fill(&s, m)
-			withCategory(&s, key)
-			out = append(out, s)
-		}
-	}
-
 	// Rising categories: the baseline has to be real history, not months
 	// before the family started using crewmate.
+	risingCats := map[string]bool{}
 	if history <= baseFrom {
 		for ck, c := range byCategory {
 			if dismissed[store.SubjectCategory+":"+ck] {
@@ -327,6 +286,7 @@ func Detect(in Input) []Suggestion {
 				float64(pace) < float64(base)*minRiseRatio {
 				continue
 			}
+			risingCats[ck] = true
 			ci := cats[ck]
 			s := Suggestion{
 				Kind:           KindRising,
@@ -364,6 +324,51 @@ func Detect(in Input) []Suggestion {
 		}
 	}
 
+	// Habits: merchants paid most months, at a pace worth noticing. Needs
+	// enough history to tell a habit from a new arrival.
+	//
+	// A merchant whose money mostly goes to a rising category is left to that
+	// category's suggestion, where it's named among what drove the rise.
+	// Both would claim the same dollars — Home Depot inside Home Improvement
+	// — and side by side their savings read as if the merchant outweighed
+	// the category it's part of: one is "stop entirely", the other "back to
+	// where you were".
+	if history <= full-6 {
+		for key, m := range byMerchant {
+			if subscribed[key] || dismissed[store.SubjectMerchant+":"+key] {
+				continue
+			}
+			if risingCats[dominantCategory(merchantCat[key])] {
+				continue
+			}
+			active := 0
+			for i := full - 6; i < full; i++ {
+				if m.cents[i] > 0 {
+					active++
+				}
+			}
+			pace := avg(m.cents[paceFrom:full])
+			stillGoing := m.cents[full-2]+m.cents[full-1]+m.cents[full] > 0
+			if active < minHabitMonths || pace < minHabitPaceCents || !stillGoing {
+				continue
+			}
+			title, mcc := payee(key)
+			s := Suggestion{
+				Kind:           KindHabit,
+				SubjectType:    store.SubjectMerchant,
+				SubjectKey:     key,
+				Title:          title,
+				MCC:            mcc,
+				PaceCents:      pace,
+				ProjectedCents: pace * 12,
+				SavingsCents:   pace * 12,
+			}
+			fill(&s, m)
+			withCategory(&s, key)
+			out = append(out, s)
+		}
+	}
+
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].SavingsCents != out[j].SavingsCents {
 			return out[i].SavingsCents > out[j].SavingsCents
@@ -371,6 +376,19 @@ func Detect(in Input) []Suggestion {
 		return out[i].Key() < out[j].Key()
 	})
 	return out
+}
+
+// dominantCategory is the category most of a merchant's money went to; ""
+// for uncategorized.
+func dominantCategory(byCat map[string]int64) string {
+	var best string
+	var bestCents int64 = -1
+	for ck, c := range byCat {
+		if c > bestCents || (c == bestCents && ck < best) {
+			best, bestCents = ck, c
+		}
+	}
+	return best
 }
 
 // cadence returns a series' billing period in days and charges per year.

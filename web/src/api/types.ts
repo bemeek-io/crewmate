@@ -216,3 +216,61 @@ export interface MonthlySpend {
   total: MonthlySeries;
   categories: MonthlyCategory[];
 }
+
+export type SuggestionKind = "subscription" | "habit" | "rising";
+export type Verdict = "essential" | "discretionary" | "unclear";
+
+export interface Suggestion {
+  kind: SuggestionKind;
+  subject_type: "merchant" | "category";
+  /** A merchant_key, or a category id. */
+  subject_key: string;
+  title: string;
+  category_id: string | null;
+  category_name: string;
+  color: string;
+  mcc: string;
+  /** Spent per month of `Insights.months`; the last is in progress. */
+  cents: number[];
+  /** Over the window's twelve full months. */
+  last12_cents: number;
+  charges: number;
+  /** The monthly rate the projection runs at. */
+  pace_cents: number;
+  /** Rising categories: the earlier monthly level. */
+  baseline_cents: number;
+  per_charge_cents: number;
+  cadence: string;
+  /** Next twelve months at the current pace. */
+  projected_cents: number;
+  /** What acting on it would keep of that. */
+  savings_cents: number;
+  drivers: { merchant_key: string; payee: string; delta_cents: number }[] | null;
+  verdict: Verdict;
+  /** The model's one-line reason; empty when the rules decided. */
+  note: string;
+  verdict_source: "ai" | "rules";
+}
+
+export interface InsightDismissal {
+  subject_type: "merchant" | "category";
+  subject_key: string;
+  label: string;
+  created_at: string;
+}
+
+export interface Insights {
+  months: string[];
+  tz: string;
+  /** Start of the first full month. */
+  window_start: string;
+  /** Start of the month in progress. */
+  window_end: string;
+  days_elapsed: number;
+  days_in_month: number;
+  ai_enabled: boolean;
+  /** The AI was still working when this was sent; its verdicts arrive on a later load. */
+  judging: boolean;
+  suggestions: Suggestion[];
+  dismissed: InsightDismissal[];
+}

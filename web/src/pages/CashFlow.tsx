@@ -4,6 +4,7 @@ import { get, fmtCents } from "../api/client";
 import type { CashFlow as CashFlowData, CashFlowEntry, VendorSpend } from "../api/types";
 import TxnList from "../components/TxnList";
 import MonthlySpending from "../components/MonthlySpending";
+import SavingsInsights from "../components/SavingsInsights";
 import { ChevronRightIcon, ChevronDownIcon } from "../components/Icons";
 
 const RANGES = [
@@ -245,6 +246,8 @@ export default function CashFlow() {
           </div>
 
           <MonthlySpending />
+
+          <SavingsInsights />
 
           <Section
             title="Expenses"

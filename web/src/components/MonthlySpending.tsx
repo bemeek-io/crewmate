@@ -1,8 +1,9 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { get, fmtCents } from "../api/client";
 import type { MonthlyCategory, MonthlySeries, MonthlySpend as Data } from "../api/types";
 import { CloseIcon } from "./Icons";
+import { barPath, compact, dollars, monthDate, monthShort, niceTicks, useWidth } from "./chartKit";
 
 const WINDOWS = [
   { key: "6", label: "6M" },
@@ -23,11 +24,6 @@ const MIN_PACE_DAYS = 5;
 /** Within this share of the average, a month reads as "on average". */
 const STEADY = 0.05;
 
-const monthDate = (key: string) => {
-  const [y, m] = key.split("-").map(Number);
-  return new Date(y, m - 1, 1);
-};
-const monthShort = (key: string) => monthDate(key).toLocaleDateString(undefined, { month: "short" });
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const monthsBetween = (from: string, to: string) => {
   const a = monthDate(from);
@@ -36,42 +32,6 @@ const monthsBetween = (from: string, to: string) => {
 };
 const monthLong = (key: string, withYear = false) =>
   monthDate(key).toLocaleDateString(undefined, withYear ? { month: "long", year: "numeric" } : { month: "long" });
-
-/** $1,240 → "$1.2k": axis ticks only; every exact figure uses fmtCents. */
-function compact(cents: number): string {
-  const d = cents / 100;
-  if (d >= 1000) {
-    const k = d / 1000;
-    return `$${k >= 10 || Number.isInteger(k) ? Math.round(k) : k.toFixed(1)}k`;
-  }
-  return `$${Math.round(d)}`;
-}
-
-/** Whole dollars — a trend of $41.87/mo claims more precision than a fit has. */
-const dollars = (cents: number) =>
-  (Math.abs(cents) / 100).toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
-
-/** Round axis ticks from 0 to at least max, three or four steps. */
-function niceTicks(max: number): number[] {
-  if (max <= 0) return [0];
-  const raw = max / 3;
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const step = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((s) => s >= raw) ?? raw;
-  const ticks: number[] = [];
-  for (let v = 0; v < max + step * 0.999; v += step) ticks.push(v);
-  return ticks;
-}
-
-/** A column with a rounded data end and a square foot on the baseline. */
-function barPath(x: number, y: number, w: number, h: number) {
-  const r = Math.min(4, w / 2, h);
-  const b = y + h;
-  return `M${x},${b}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${b}Z`;
-}
 
 type Delta = { pct: number; label: string; tone: "up" | "down" | "flat" };
 
@@ -101,22 +61,6 @@ function DeltaText({ d, short = false }: { d: Delta; short?: boolean }) {
       {text}
     </span>
   );
-}
-
-/** Tracks an element's width so the chart draws at real pixels, not a
- *  stretched viewBox that would squash its text. */
-function useWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
-  const ref = useRef<T>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    setWidth(el.clientWidth);
-    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, width];
 }
 
 /**

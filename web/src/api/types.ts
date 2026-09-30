@@ -182,3 +182,34 @@ export interface SubscriptionSpend {
   total_cents: number;
   vendors: VendorSpend[];
 }
+
+export interface MonthlySeries {
+  /** One value per month in `MonthlySpend.months`. */
+  cents: number[];
+  /** Mean of the complete months since history began. */
+  avg_cents: number;
+  /** Least-squares fit over complete months; x is the month index. */
+  trend: { slope_cents: number; intercept_cents: number } | null;
+  /** The month in progress, extrapolated at its pace so far. */
+  projected_cents: number;
+}
+
+export interface MonthlyCategory extends MonthlySeries {
+  category_id: string | null;
+  category_name: string;
+  color: string;
+  system_key: string | null;
+  total_cents: number;
+}
+
+export interface MonthlySpend {
+  /** "YYYY-MM", oldest first; the last is the month in progress. */
+  months: string[];
+  tz: string;
+  /** First month with any spending; earlier ones predate the history. */
+  history_start: number;
+  days_elapsed: number;
+  days_in_month: number;
+  total: MonthlySeries;
+  categories: MonthlyCategory[];
+}

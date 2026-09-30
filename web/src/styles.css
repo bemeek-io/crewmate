@@ -706,3 +706,229 @@ select:focus {
 a {
   color: var(--accent);
 }
+
+/* Monthly spending */
+.mcard {
+  position: relative;
+}
+.mhero {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+}
+.mhero-sub {
+  min-height: 1.3em;
+  margin-bottom: 10px;
+}
+/* The active category, pinned top-right so the headline keeps its width. */
+.mfilter {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mdelta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mdelta-arrow {
+  font-size: 0.7em;
+}
+/* Spending more than usual is the direction to notice. */
+.mdelta.up {
+  color: var(--danger);
+}
+.mdelta.down {
+  color: var(--accent);
+}
+.mdelta.flat {
+  color: var(--muted);
+}
+
+.mchart {
+  width: 100%;
+  margin: 0 -2px;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y;
+}
+.mchart:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+.mchart svg {
+  display: block;
+}
+.mchart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.mchart-tick {
+  fill: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mchart-tick.on {
+  fill: var(--text);
+  font-weight: 700;
+}
+.mchart-focus {
+  fill: var(--surface2);
+  transition: x 0.18s ease;
+}
+.mchart-avg {
+  stroke: var(--muted);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 4;
+}
+.mchart-trend {
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.mchart-trend.forecast {
+  stroke-dasharray: 1 5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mchart-focus {
+    transition: none;
+  }
+}
+
+.mlegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0 2px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.mlegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.key-bar {
+  width: 9px;
+  height: 11px;
+  border-radius: 2px 2px 0 0;
+  display: inline-block;
+}
+.key-hatch {
+  background: repeating-linear-gradient(
+    45deg,
+    currentColor 0 2px,
+    color-mix(in srgb, currentColor 35%, transparent) 2px 4px
+  );
+}
+.key-line {
+  width: 16px;
+  height: 0;
+  display: inline-block;
+}
+.key-line.avg {
+  border-top: 1.5px dashed var(--muted);
+}
+.key-line.trend {
+  border-top: 2px solid var(--text);
+  border-radius: 1px;
+}
+
+.mstats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.mstat {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 2px 0 1px;
+}
+
+.mcats {
+  padding: 6px 10px;
+}
+.mcat {
+  border-bottom: 1px solid var(--border);
+}
+.mcat:last-of-type {
+  border-bottom: 0;
+}
+.mcat-btn {
+  width: 100%;
+  padding: 11px 6px;
+  border-radius: 10px;
+}
+.mcat.on .mcat-btn {
+  background: var(--surface2);
+}
+.mcat-amt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 78px;
+  gap: 1px;
+}
+.mspark {
+  flex: none;
+}
+.mcat-months {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  padding: 8px 6px 12px;
+}
+.mcat-month {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: auto;
+  margin: 0;
+  padding: 7px 9px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  font-weight: 500;
+}
+.mcat-month.on {
+  border-color: var(--accent);
+}
+.mcat-more {
+  width: 100%;
+  margin: 4px 0 2px;
+  padding: 10px;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

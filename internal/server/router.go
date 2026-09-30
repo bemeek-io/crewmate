@@ -15,6 +15,7 @@ import (
 	"github.com/bemeek-io/crewmate/internal/crewlink"
 	"github.com/bemeek-io/crewmate/internal/family"
 	"github.com/bemeek-io/crewmate/internal/httpx"
+	"github.com/bemeek-io/crewmate/internal/insightsapi"
 	"github.com/bemeek-io/crewmate/internal/push"
 	"github.com/bemeek-io/crewmate/internal/store"
 	"github.com/bemeek-io/crewmate/internal/transactionsapi"
@@ -29,6 +30,7 @@ type Deps struct {
 	Crew       *crewlink.Handlers
 	Txns       *transactionsapi.Handlers
 	Categories *categoriesapi.Handlers
+	Insights   *insightsapi.Handlers
 	Push       *push.Handlers
 	AppBaseURL string
 	// RequireHTTPS enables HSTS. Comes from config, which has already refused
@@ -93,6 +95,11 @@ func NewRouter(d Deps) http.Handler {
 			fr.Get("/cashflow", d.Txns.CashFlow)
 			fr.Get("/cashflow/vendors", d.Txns.CashFlowVendors)
 			fr.Get("/cashflow/monthly", d.Txns.MonthlySpend)
+
+			fr.Get("/insights", d.Insights.List)
+			fr.Post("/insights/dismissals", d.Insights.Dismiss)
+			fr.Delete("/insights/dismissals", d.Insights.Restore)
+			fr.Put("/insights/nudges", d.Insights.SetNudges)
 			fr.Get("/transactions", d.Txns.List)
 			fr.Get("/transactions/{id}", d.Txns.Get)
 			fr.Patch("/transactions/{id}/category", d.Txns.SetCategory)

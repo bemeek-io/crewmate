@@ -27,6 +27,7 @@ import (
 	"github.com/bemeek-io/crewmate/internal/crewlink"
 	"github.com/bemeek-io/crewmate/internal/crypto"
 	"github.com/bemeek-io/crewmate/internal/family"
+	"github.com/bemeek-io/crewmate/internal/insightsapi"
 	"github.com/bemeek-io/crewmate/internal/leases"
 	"github.com/bemeek-io/crewmate/internal/push"
 	"github.com/bemeek-io/crewmate/internal/server"
@@ -147,6 +148,7 @@ func run() error {
 	familyH := &family.Handlers{Store: st, Log: log}
 	crewH := &crewlink.Handlers{Store: st, Log: log}
 	txnsH := &transactionsapi.Handlers{Store: st, Log: log}
+	insightsH := &insightsapi.Handlers{Store: st, Judge: llm, Log: log}
 	catsH := &categoriesapi.Handlers{Store: st, Log: log, Pipeline: pipeline}
 	pushH := &push.Handlers{Service: pushSvc}
 
@@ -163,6 +165,7 @@ func run() error {
 		Family:       familyH,
 		Crew:         crewH,
 		Txns:         txnsH,
+		Insights:     insightsH,
 		Categories:   catsH,
 		Push:         pushH,
 		AppBaseURL:   cfg.AppBaseURL,

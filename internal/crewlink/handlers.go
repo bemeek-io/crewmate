@@ -52,6 +52,9 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 		},
 		"crew_status": "none",
 	}
+	if on, err := h.Store.WantsSavingsNudges(ctx, userID); err == nil {
+		out["savings_nudges"] = on
+	}
 	if conn != nil {
 		out["crew_status"] = string(conn.Status)
 		// When the watcher last completed a poll, which is the only evidence

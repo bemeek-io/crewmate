@@ -186,3 +186,11 @@ export const CheckIcon = (p: IconProps) => (
     <path d="m4 12.5 5.5 5.5L20 7" />
   </Icon>
 );
+
+/** Marks a judgement that came from the AI model rather than from the numbers. */
+export const SparkleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3.5c.4 3.9 2.6 6.1 6.5 6.5-3.9.4-6.1 2.6-6.5 6.5-.4-3.9-2.6-6.1-6.5-6.5 3.9-.4 6.1-2.6 6.5-6.5Z" />
+    <path d="M18.5 15.5c.2 1.6 1 2.4 2.5 2.5-1.5.2-2.3 1-2.5 2.5-.2-1.5-1-2.3-2.5-2.5 1.5-.1 2.3-.9 2.5-2.5Z" />
+  </Icon>
+);

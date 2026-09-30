@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/bemeek-io/crewmate/internal/insights"
 	"github.com/bemeek-io/crewmate/internal/push"
 	"github.com/bemeek-io/crewmate/internal/store"
 )
@@ -116,16 +117,63 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 
 	// Push, exactly once across all replicas. A rule-assigned category is
 	// deliberately silent; an LLM guess or an unrecognized merchant is not,
-	// since both are things the family may want to correct.
-	if !item.Notify || res.silent || time.Since(t.OccurredAt) > notifyWindow {
+	// since both are things the family may want to correct. A purchase that
+	// matches a savings suggestion is worth a push either way.
+	if !item.Notify || time.Since(t.OccurredAt) > notifyWindow {
 		_, _ = p.Store.ClaimNotification(ctx, t.ID) // absorb silently
+		return
+	}
+	match := p.savingsMatch(ctx, t, res)
+	if res.silent && match == nil {
+		_, _ = p.Store.ClaimNotification(ctx, t.ID)
 		return
 	}
 	claimed, err := p.Store.ClaimNotification(ctx, t.ID)
 	if err != nil || !claimed {
 		return
 	}
-	p.notify(ctx, t, res.category)
+	var nudge *push.Notification
+	if match != nil {
+		filed := ""
+		if !res.silent {
+			filed = res.category // the ordinary push would have said so
+		}
+		b := insights.BuildNudge(*match, t.AmountCents, t.Payee, filed)
+		nudge = &push.Notification{Title: b.Title, Body: b.Body, URL: b.URL}
+	}
+	var regular *push.Notification
+	if !res.silent {
+		n := buildNotification(t, res.category)
+		regular = &n
+	}
+	p.notify(ctx, t, regular, nudge, match)
+}
+
+// savingsMatch returns the savings suggestion a new purchase falls under, if
+// it's one worth a nudge: not judged a necessity, not marked not applicable.
+//
+// A purchase still waiting to be categorized gets the tap-to-categorize push
+// instead — that one needs an answer; a nudge only informs.
+func (p *Pipeline) savingsMatch(ctx context.Context, t *store.Transaction, res outcome) *insights.Suggestion {
+	if t.AmountCents >= 0 || (!res.silent && res.category == "") {
+		return nil
+	}
+	loc := time.UTC
+	if tz, err := p.Store.FamilyTimezone(ctx, t.FamilyID); err != nil {
+		p.Log.Warn("family timezone", zap.Error(err))
+	} else if l, err := time.LoadLocation(tz); tz != "" && err == nil {
+		loc = l
+	}
+	rep, err := insights.Load(ctx, p.Store, t.FamilyID, time.Now().In(loc))
+	if err != nil {
+		p.Log.Warn("savings suggestions", zap.Error(err))
+		return nil
+	}
+	s := insights.Match(rep.Suggestions, t.MerchantKey, res.category)
+	if s == nil || insights.VerdictFor(*s, rep.Cached, rep.Now) == insights.VerdictEssential {
+		return nil
+	}
+	return s
 }
 
 // notify sends to the cardholder for a card swipe, and to the whole household
@@ -138,18 +186,57 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 //
 // An unrecognized card notifies everyone. That's the safe direction: a missed
 // notification about real money costs more than a redundant one.
-func (p *Pipeline) notify(ctx context.Context, t *store.Transaction, category string) {
-	n := buildNotification(t, category)
+//
+// Each recipient gets one push at most: the savings nudge if there is one,
+// they want nudges and haven't had one about this suggestion today; otherwise
+// the ordinary push if there is one. Nudges reach exactly the people the
+// ordinary push would, so nobody hears about another cardholder's purchase.
+func (p *Pipeline) notify(ctx context.Context, t *store.Transaction, regular, nudge *push.Notification, match *insights.Suggestion) {
+	var recipients []store.NudgeRecipient
 	if t.DebitCardID != "" {
 		owner, ok, err := p.Store.CardOwner(ctx, t.FamilyID, t.DebitCardID)
 		if err != nil {
 			p.Log.Warn("card owner lookup", zap.Error(err))
 		} else if ok {
-			p.Push.SendToUser(ctx, owner, n)
+			wants, err := p.Store.WantsSavingsNudges(ctx, owner)
+			if err != nil {
+				p.Log.Warn("savings nudge setting", zap.Error(err))
+			}
+			recipients = []store.NudgeRecipient{{UserID: owner, Wants: wants}}
+		}
+	}
+	if recipients == nil {
+		var err error
+		if recipients, err = p.Store.FamilyNudgeRecipients(ctx, t.FamilyID); err != nil {
+			p.Log.Warn("family members", zap.Error(err))
 			return
 		}
 	}
-	p.Push.SendToFamily(ctx, t.FamilyID, n)
+	for _, r := range recipients {
+		wants := r.Wants
+		if nudge != nil && wants {
+			// Claimed per person, and only here, after the transaction's own
+			// claim: a replica that loses the race for the transaction must
+			// not use up anyone's nudge for the day.
+			ok, err := p.Store.ClaimInsightNudge(ctx, t.FamilyID, r.UserID,
+				match.SubjectType, match.SubjectKey, insights.NudgeCooldown)
+			if err != nil {
+				p.Log.Warn("claim savings nudge", zap.Error(err))
+			}
+			wants = ok
+		}
+		if n := pickPush(regular, nudge, wants); n != nil {
+			p.Push.SendToUser(ctx, r.UserID, *n)
+		}
+	}
+}
+
+// pickPush chooses what one person hears about a transaction.
+func pickPush(regular, nudge *push.Notification, wantsNudges bool) *push.Notification {
+	if nudge != nil && wantsNudges {
+		return nudge
+	}
+	return regular
 }
 
 // resolveCategory decides this transaction's category and queues the note

@@ -75,4 +75,11 @@ func TestMonthlySpendCutsMonthsInZone(t *testing.T) {
 	if sep.Month.Format("2006-01") != "2026-09" || sep.CategoryID != nil || sep.Cents != 10_00 {
 		t.Errorf("september row = %+v, want uncategorized $10", sep)
 	}
+
+	// "All time" starts at the earliest expense; the refund doesn't count.
+	first, err := st.FirstSpend(ctx, familyID)
+	must(err, "first spend")
+	if first == nil || !first.Equal(time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)) {
+		t.Errorf("FirstSpend = %v, want the late-August charge", first)
+	}
 }

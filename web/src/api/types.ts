@@ -4,6 +4,8 @@ export interface Me {
   // When the watcher last completed a poll. Null before the first one lands.
   last_polled_at?: string | null;
   family_id?: string;
+  /** Push when a purchase matches a savings suggestion. */
+  savings_nudges?: boolean;
 }
 
 export interface Subaccount {

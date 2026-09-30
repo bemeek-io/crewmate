@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { get, fmtCents } from "../api/client";
 import type { CashFlow as CashFlowData, CashFlowEntry, VendorSpend } from "../api/types";
@@ -182,6 +183,9 @@ function Section({
 }
 
 export default function CashFlow() {
+  // A savings nudge links here with the suggestion it was about.
+  const [params] = useSearchParams();
+  const focus = params.get("insight");
   const [range, setRange] = useState("1m");
   const report = useQuery({
     queryKey: ["cashflow", range],
@@ -247,7 +251,7 @@ export default function CashFlow() {
 
           <MonthlySpending />
 
-          <SavingsInsights />
+          <SavingsInsights focus={focus} />
 
           <Section
             title="Expenses"

@@ -99,6 +99,7 @@ func NewRouter(d Deps) http.Handler {
 			fr.Get("/insights", d.Insights.List)
 			fr.Post("/insights/dismissals", d.Insights.Dismiss)
 			fr.Delete("/insights/dismissals", d.Insights.Restore)
+			fr.Put("/insights/nudges", d.Insights.SetNudges)
 			fr.Get("/transactions", d.Txns.List)
 			fr.Get("/transactions/{id}", d.Txns.Get)
 			fr.Patch("/transactions/{id}/category", d.Txns.SetCategory)

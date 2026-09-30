@@ -28,7 +28,10 @@ What it does:
   next 12, what cutting it would save, and the transactions behind it. Every figure is computed
   from the ledger; Claude (when `ANTHROPIC_API_KEY` is set) only judges which spending looks
   necessary and writes a one-line note. Mark anything "not applicable" — tithing, taxes — and
-  it's never flagged again.
+  it's never flagged again. With **savings nudges** on (per person, in Settings), a purchase that
+  matches a suggestion replaces the usual push with one saying what that spending has cost and
+  what cutting it would save — at most once a day per suggestion — and tapping it opens that
+  suggestion.
 - **Families** — one deployment serves many families; invite codes (single-use, 48 h) share
   categories and visibility between members.
 

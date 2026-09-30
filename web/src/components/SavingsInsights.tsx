@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { del, get, post, fmtCents } from "../api/client";
 import type { InsightDismissal, Insights, Suggestion } from "../api/types";
@@ -229,13 +229,22 @@ function SuggestionRow({
   d,
   onDismiss,
   busy,
+  focused = false,
 }: {
   s: Suggestion;
   d: Insights;
   onDismiss: (subjectType: "merchant" | "category", subjectKey: string, label: string) => void;
   busy: boolean;
+  /** Opened from a nudge: expand it and bring it on screen. */
+  focused?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(focused);
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focused) return;
+    setOpen(true);
+    rowRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focused]);
   const [showTxns, setShowTxns] = useState(false);
 
   const txnParams = new URLSearchParams({
@@ -246,7 +255,7 @@ function SuggestionRow({
   else txnParams.set("category", s.subject_key);
 
   return (
-    <div className={`srow ${open ? "open" : ""}`}>
+    <div ref={rowRef} className={`srow ${open ? "open" : ""} ${focused ? "focused" : ""}`}>
       <button className="row series-toggle srow-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className="icon-muted" style={{ lineHeight: 0 }}>
           {open ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
@@ -333,8 +342,18 @@ function SuggestionRow({
   );
 }
 
-function Collapsible({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+function Collapsible({
+  title,
+  count,
+  children,
+  initiallyOpen = false,
+}: {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+  initiallyOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
   if (count === 0) return null;
   return (
     <div className="sgroup">
@@ -357,8 +376,12 @@ function Collapsible({ title, count, children }: { title: string; count: number;
  * Fetched only when opened: the first look can involve an AI call, and most
  * visits to Cash flow aren't for this.
  */
-export default function SavingsInsights() {
-  const [open, setOpen] = useState(false);
+export default function SavingsInsights({ focus }: { focus?: string | null }) {
+  // Closed unless a nudge sent us here to see one suggestion.
+  const [open, setOpen] = useState(!!focus);
+  useEffect(() => {
+    if (focus) setOpen(true);
+  }, [focus]);
   const qc = useQueryClient();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
@@ -429,8 +452,21 @@ export default function SavingsInsights() {
 
         {open && d && (
           <div className="sbodywrap">
+            {focus && !d.suggestions.some((s) => suggestionKey(s) === focus) && (
+              <p className="muted small sgone">
+                The suggestion that notification was about no longer applies. It may have been marked not
+                applicable, or the spending behind it has changed.
+              </p>
+            )}
             {worth.map((s) => (
-              <SuggestionRow key={suggestionKey(s)} s={s} d={d} onDismiss={onDismiss} busy={busy} />
+              <SuggestionRow
+                key={suggestionKey(s)}
+                s={s}
+                d={d}
+                onDismiss={onDismiss}
+                busy={busy}
+                focused={suggestionKey(s) === focus}
+              />
             ))}
             {worth.length === 0 && (
               <p className="muted" style={{ padding: "10px 0" }}>
@@ -438,12 +474,23 @@ export default function SavingsInsights() {
               </p>
             )}
 
-            <Collapsible title="Looks necessary" count={needs.length}>
+            <Collapsible
+              title="Looks necessary"
+              count={needs.length}
+              initiallyOpen={needs.some((s) => suggestionKey(s) === focus)}
+            >
               <p className="muted small" style={{ margin: "0 0 4px 26px" }}>
                 These look like needs, so they aren't counted above. Open one to check.
               </p>
               {needs.map((s) => (
-                <SuggestionRow key={suggestionKey(s)} s={s} d={d} onDismiss={onDismiss} busy={busy} />
+                <SuggestionRow
+                  key={suggestionKey(s)}
+                  s={s}
+                  d={d}
+                  onDismiss={onDismiss}
+                  busy={busy}
+                  focused={suggestionKey(s) === focus}
+                />
               ))}
             </Collapsible>
 

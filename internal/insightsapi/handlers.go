@@ -49,53 +49,21 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().In(loc)
-	cur := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
-	start := cur.AddDate(0, -insights.WindowMonths, 0)
-	end := cur.AddDate(0, 1, 0)
-	months := make([]string, 0, insights.WindowMonths+1)
-	for m := start; m.Before(end); m = m.AddDate(0, 1, 0) {
-		months = append(months, m.Format("2006-01"))
-	}
-
 	famID := family.FamilyID(ctx)
-	fail := func(what string, err error) {
-		h.Log.Error("insights: "+what, zap.Error(err))
+	// Remember the zone, so nudges sent from the background cut months the
+	// same way this page does.
+	if err := h.Store.SetFamilyTimezone(ctx, famID, loc.String()); err != nil {
+		h.Log.Warn("insights: save timezone", zap.Error(err))
+	}
+	rep, err := insights.Load(ctx, h.Store, famID, now)
+	if err != nil {
+		h.Log.Error("insights: load", zap.Error(err))
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not build suggestions")
-	}
-	rows, err := h.Store.SpendByMerchantMonth(ctx, famID, start, end, loc.String())
-	if err != nil {
-		fail("spend", err)
 		return
 	}
-	profiles, err := h.Store.MerchantProfiles(ctx, famID, start, end)
-	if err != nil {
-		fail("profiles", err)
-		return
-	}
-	series, err := h.Store.ListRecurringSeries(ctx, famID)
-	if err != nil {
-		fail("series", err)
-		return
-	}
-	dismissed, err := h.Store.ListInsightDismissals(ctx, famID)
-	if err != nil {
-		fail("dismissals", err)
-		return
-	}
-	cached, err := h.Store.InsightVerdicts(ctx, famID)
-	if err != nil {
-		fail("verdicts", err)
-		return
-	}
+	sugg, cached, necessities := rep.Suggestions, rep.Cached, rep.Necessities()
+	months, start, cur, end, dismissed := rep.Months, rep.Start, rep.Current, rep.End, rep.Dismissed
 
-	sugg := insights.Detect(insights.Input{
-		Now: now, Months: months, Rows: rows, Profiles: profiles,
-		Series: series, Dismissed: dismissed,
-	})
-	necessities := make([]string, 0, len(dismissed))
-	for _, d := range dismissed {
-		necessities = append(necessities, d.Label)
-	}
 	// Judging runs detached from the request, so a slow model can't hold the
 	// response past the server's write timeout. If it isn't done in time the
 	// rules answer for now, and the model's verdicts land in the cache for
@@ -215,6 +183,28 @@ func (h *Handlers) Restore(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		h.Log.Error("insights: restore", zap.Error(err))
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not save that")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SetNudges handles PUT /api/insights/nudges: whether this person gets a push
+// when a purchase matches a savings suggestion.
+func (h *Handlers) SetNudges(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		On *bool `json:"on"`
+	}
+	if !httpx.Decode(w, r, &req) {
+		return
+	}
+	if req.On == nil {
+		httpx.Error(w, http.StatusBadRequest, "bad_request", "on is required")
+		return
+	}
+	ctx := r.Context()
+	if err := h.Store.SetSavingsNudges(ctx, auth.UserID(ctx), *req.On); err != nil {
+		h.Log.Error("insights: set nudges", zap.Error(err))
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not save that")
 		return
 	}

@@ -1094,3 +1094,24 @@ a {
   padding: 12px 0 8px;
   line-height: 1.45;
 }
+.nudge-toggle {
+  align-items: flex-start;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.nudge-toggle input {
+  accent-color: var(--accent);
+  margin-top: 3px !important;
+}
+/* The suggestion a nudge linked to, marked so the eye lands on it. */
+.srow.focused {
+  scroll-margin-top: calc(env(safe-area-inset-top) + 12px);
+  box-shadow: inset 3px 0 0 var(--accent);
+  margin-left: -14px;
+  padding-left: 14px;
+}
+.sgone {
+  padding: 12px 0 4px;
+}

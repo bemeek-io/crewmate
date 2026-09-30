@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { get, post, del } from "../api/client";
+import { get, post, put, del } from "../api/client";
 import type { Me } from "../api/types";
 import { syncHealth } from "../api/sync";
 import { enablePush, needsInstallForPush, pushSupported } from "../push";
@@ -58,6 +58,15 @@ export default function Settings() {
     }
   }
 
+  async function onNudges(on: boolean) {
+    qc.setQueryData<Me>(["me"], (m) => (m ? { ...m, savings_nudges: on } : m));
+    try {
+      await put("/api/insights/nudges", { on });
+    } finally {
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    }
+  }
+
   async function onLogout() {
     await post("/api/auth/logout");
     qc.clear();
@@ -110,6 +119,21 @@ export default function Settings() {
                 {diagnosis}
               </p>
             )}
+            <label className="row nudge-toggle">
+              <input
+                type="checkbox"
+                style={{ width: "auto", margin: 0 }}
+                checked={me.data?.savings_nudges ?? true}
+                onChange={(e) => onNudges(e.target.checked)}
+              />
+              <span>
+                <span style={{ display: "block" }}>Savings nudges</span>
+                <span className="muted small">
+                  When a purchase matches one of your Ways to save suggestions, the push says what that
+                  spending has cost and what cutting it would save. At most once a day per suggestion.
+                </span>
+              </span>
+            </label>
           </>
         ) : perm === "denied" ? (
           <p className="muted">

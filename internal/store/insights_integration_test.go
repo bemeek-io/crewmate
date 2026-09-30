@@ -98,6 +98,36 @@ func TestInsightsStore(t *testing.T) {
 		t.Errorf("second restore = %v, want ErrNotFound", err)
 	}
 
+	// One nudge a day per suggestion, claimed atomically.
+	first, err := st.ClaimInsightNudge(ctx, familyID, SubjectMerchant, "doordash", 24*time.Hour)
+	must(err, "claim nudge")
+	again, err := st.ClaimInsightNudge(ctx, familyID, SubjectMerchant, "doordash", 24*time.Hour)
+	must(err, "claim nudge again")
+	if !first || again {
+		t.Errorf("claims = %v, %v; want the first only", first, again)
+	}
+	_, err = st.Pool.Exec(ctx, `UPDATE insight_nudges SET last_sent_at = now() - interval '25 hours'
+		WHERE family_id = $1`, familyID)
+	must(err, "age nudge")
+	if later, err := st.ClaimInsightNudge(ctx, familyID, SubjectMerchant, "doordash", 24*time.Hour); err != nil || !later {
+		t.Errorf("claim after cooldown = %v, %v", later, err)
+	}
+
+	// Settings and the family's zone.
+	_, err = st.Pool.Exec(ctx, `INSERT INTO family_members (family_id, user_id, role) VALUES ($1,$2,'admin')`,
+		familyID, userID)
+	must(err, "insert member")
+	must(st.SetSavingsNudges(ctx, userID, false), "nudges off")
+	rs, err := st.FamilyNudgeRecipients(ctx, familyID)
+	must(err, "recipients")
+	if len(rs) != 1 || rs[0].UserID != userID || rs[0].Wants {
+		t.Errorf("recipients = %+v, want the one member with nudges off", rs)
+	}
+	must(st.SetFamilyTimezone(ctx, familyID, "America/Denver"), "set tz")
+	if tz, err := st.FamilyTimezone(ctx, familyID); err != nil || tz != "America/Denver" {
+		t.Errorf("tz = %q, %v", tz, err)
+	}
+
 	v := InsightVerdict{SubjectType: SubjectMerchant, SubjectKey: "doordash", Fingerprint: "f1",
 		Verdict: "discretionary", Note: "Food delivery."}
 	must(st.SaveInsightVerdicts(ctx, familyID, []InsightVerdict{v}), "save verdict")

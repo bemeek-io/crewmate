@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // Insight subjects: what a savings suggestion, a dismissal or a verdict is
@@ -192,4 +193,81 @@ func (s *Store) SaveInsightVerdicts(ctx context.Context, familyID uuid.UUID, vs 
 		}
 	}
 	return nil
+}
+
+// ClaimInsightNudge reserves the right to nudge about a suggestion now. It
+// returns false when a nudge about it went out within cooldown — on any
+// replica, since the check and the claim are one statement.
+func (s *Store) ClaimInsightNudge(ctx context.Context, familyID uuid.UUID, subjectType, subjectKey string, cooldown time.Duration) (bool, error) {
+	var ok bool
+	err := s.Pool.QueryRow(ctx, `
+		INSERT INTO insight_nudges (family_id, subject_type, subject_key, last_sent_at)
+		VALUES ($1,$2,$3, now())
+		ON CONFLICT (family_id, subject_type, subject_key) DO UPDATE
+		   SET last_sent_at = now()
+		 WHERE insight_nudges.last_sent_at < now() - make_interval(secs => $4)
+		RETURNING true`,
+		familyID, subjectType, subjectKey, cooldown.Seconds()).Scan(&ok)
+	if err == pgx.ErrNoRows {
+		return false, nil
+	}
+	return ok, err
+}
+
+// FamilyTimezone is the zone the family's browser last reported, or "" if it
+// never has.
+func (s *Store) FamilyTimezone(ctx context.Context, familyID uuid.UUID) (string, error) {
+	var tz *string
+	err := s.Pool.QueryRow(ctx, `SELECT timezone FROM families WHERE id = $1`, familyID).Scan(&tz)
+	if err != nil || tz == nil {
+		return "", err
+	}
+	return *tz, nil
+}
+
+// SetFamilyTimezone records the zone the family's browser reports.
+func (s *Store) SetFamilyTimezone(ctx context.Context, familyID uuid.UUID, tz string) error {
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE families SET timezone = $2 WHERE id = $1 AND timezone IS DISTINCT FROM $2`, familyID, tz)
+	return err
+}
+
+// NudgeRecipient is a family member and whether they want savings nudges.
+type NudgeRecipient struct {
+	UserID uuid.UUID
+	Wants  bool
+}
+
+// FamilyNudgeRecipients lists every member of the family.
+func (s *Store) FamilyNudgeRecipients(ctx context.Context, familyID uuid.UUID) ([]NudgeRecipient, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT u.id, u.savings_nudges
+		FROM family_members m JOIN users u ON u.id = m.user_id
+		WHERE m.family_id = $1`, familyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NudgeRecipient
+	for rows.Next() {
+		var r NudgeRecipient
+		if err := rows.Scan(&r.UserID, &r.Wants); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// WantsSavingsNudges reports one person's setting.
+func (s *Store) WantsSavingsNudges(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var on bool
+	err := s.Pool.QueryRow(ctx, `SELECT savings_nudges FROM users WHERE id = $1`, userID).Scan(&on)
+	return on, err
+}
+
+// SetSavingsNudges changes one person's setting.
+func (s *Store) SetSavingsNudges(ctx context.Context, userID uuid.UUID, on bool) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET savings_nudges = $2 WHERE id = $1`, userID, on)
+	return err
 }

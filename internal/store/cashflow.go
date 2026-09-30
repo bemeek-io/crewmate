@@ -113,3 +113,13 @@ func (s *Store) MonthlySpend(ctx context.Context, familyID uuid.UUID, start, end
 	}
 	return out, rows.Err()
 }
+
+// FirstSpend is when the family's earliest recorded expense happened, or nil
+// if there isn't one yet.
+func (s *Store) FirstSpend(ctx context.Context, familyID uuid.UUID) (*time.Time, error) {
+	var at *time.Time
+	err := s.Pool.QueryRow(ctx, `
+		SELECT min(occurred_at) FROM transactions
+		WHERE family_id = $1 AND amount_cents < 0`, familyID).Scan(&at)
+	return at, err
+}

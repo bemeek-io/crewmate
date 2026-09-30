@@ -190,7 +190,7 @@ export interface MonthlySeries {
   avg_cents: number;
   /** Least-squares fit over complete months; x is the month index. */
   trend: { slope_cents: number; intercept_cents: number } | null;
-  /** The month in progress, extrapolated at its pace so far. */
+  /** The month in progress, extrapolated at its pace so far; 0 if none. */
   projected_cents: number;
 }
 
@@ -203,9 +203,12 @@ export interface MonthlyCategory extends MonthlySeries {
 }
 
 export interface MonthlySpend {
-  /** "YYYY-MM", oldest first; the last is the month in progress. */
+  /** "YYYY-MM", oldest first. */
   months: string[];
   tz: string;
+  /** The last month is the current one, and so partial. False when a custom
+   *  range ends in a finished month. */
+  in_progress: boolean;
   /** First month with any spending; earlier ones predate the history. */
   history_start: number;
   days_elapsed: number;

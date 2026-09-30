@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { get, fmtCents } from "../api/client";
 import type { MonthlyCategory, MonthlySeries, MonthlySpend as Data } from "../api/types";
 import { CloseIcon } from "./Icons";
@@ -7,7 +7,12 @@ import { CloseIcon } from "./Icons";
 const WINDOWS = [
   { key: "6", label: "6M" },
   { key: "12", label: "1Y" },
+  { key: "all", label: "All" },
+  { key: "custom", label: "Custom" },
 ];
+
+/** The server's cap on one report — ten years of columns. */
+const MAX_MONTHS = 120;
 
 /** Categories shown before "Show all" — the long tail is rarely the story. */
 const TOP_CATEGORIES = 8;
@@ -23,6 +28,12 @@ const monthDate = (key: string) => {
   return new Date(y, m - 1, 1);
 };
 const monthShort = (key: string) => monthDate(key).toLocaleDateString(undefined, { month: "short" });
+const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const monthsBetween = (from: string, to: string) => {
+  const a = monthDate(from);
+  const b = monthDate(to);
+  return (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() + 1;
+};
 const monthLong = (key: string, withYear = false) =>
   monthDate(key).toLocaleDateString(undefined, withYear ? { month: "long", year: "numeric" } : { month: "long" });
 
@@ -108,6 +119,31 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T>, number] {
   return [ref, width];
 }
 
+/**
+ * Which months get an axis label. Labels are spaced to fit, counted back from
+ * the newest month so it's always named; the selected month is always named
+ * too, and crowds out its neighbours rather than overlapping them. Past a
+ * year, every label carries its year — "Mar" alone is ambiguous.
+ */
+function axisLabels(months: string[], slot: number, active: number): (string | null)[] {
+  const n = months.length;
+  const last = n - 1;
+  const long = n > 12;
+  const step = Math.max(1, Math.ceil((long ? 58 : 28) / slot));
+  const fmt = (m: string) => {
+    const d = monthDate(m);
+    const yy = ` ’${String(d.getFullYear()).slice(2)}`;
+    return monthShort(m) + (long || (d.getMonth() === 0 && n > 6) ? yy : "");
+  };
+  const onGrid = (i: number) => (last - i) % step === 0;
+  return months.map((m, i) => {
+    if (i === active) return fmt(m);
+    if (!onGrid(i)) return null;
+    if (!onGrid(active) && Math.abs(i - active) < step) return null;
+    return fmt(m);
+  });
+}
+
 function Chart({
   data,
   series,
@@ -126,7 +162,8 @@ function Chart({
   const n = data.months.length;
   const last = n - 1;
   const hs = data.history_start;
-  const showPace = data.days_elapsed >= MIN_PACE_DAYS;
+  const live = data.in_progress;
+  const showPace = live && data.days_elapsed >= MIN_PACE_DAYS;
 
   const W = width || 320;
   const H = 188;
@@ -149,6 +186,17 @@ function Chart({
   const slot = plotW / n;
   const bw = Math.min(24, slot * 0.58);
   const cx = (i: number) => pad.l + slot * (i + 0.5);
+  const inset = Math.min(2, slot * 0.1);
+  const labels = axisLabels(data.months, slot, active);
+
+  // One handler for the whole plot rather than a target per column: across
+  // years of months the columns are too thin to tap, but a finger can scrub.
+  const pick = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.type === "pointermove" && e.pointerType !== "mouse" && !e.buttons) return;
+    const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
+    const i = Math.floor((x - pad.l) / slot);
+    if (i >= hs && i <= last && i !== active) onActive(i);
+  };
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowLeft") onActive(Math.max(hs, active - 1));
@@ -160,7 +208,15 @@ function Chart({
   return (
     <div ref={wrapRef} className="mchart" tabIndex={0} onKeyDown={onKey} aria-label="Monthly spending chart. Use the arrow keys to move between months.">
       {width > 0 && (
-        <svg width={W} height={H} role="img" aria-hidden="true">
+        <svg
+          width={W}
+          height={H}
+          role="img"
+          aria-hidden="true"
+          onPointerDown={pick}
+          onPointerMove={pick}
+          style={{ cursor: "pointer" }}
+        >
           <defs>
             {/* The month in progress is textured, not just faded, so "partial"
                 doesn't rely on reading a lighter shade. */}
@@ -173,11 +229,11 @@ function Chart({
           {/* Selected month */}
           {active >= hs && (
             <rect
-              x={pad.l + slot * active + 2}
+              x={pad.l + slot * active + inset}
               y={pad.t - 6}
-              width={slot - 4}
+              width={slot - inset * 2}
               height={plotH + 6}
-              rx={7}
+              rx={Math.min(7, slot / 3)}
               className="mchart-focus"
             />
           )}
@@ -195,7 +251,7 @@ function Chart({
             if (i < hs) return null;
             const v = series.cents[i];
             const x = cx(i) - bw / 2;
-            const inProgress = i === last;
+            const inProgress = live && i === last;
             return (
               <g key={m}>
                 {inProgress && showPace && series.projected_cents > v && (
@@ -228,52 +284,39 @@ function Chart({
             <>
               <line
                 x1={cx(hs)}
-                x2={cx(last - 1)}
+                x2={cx(live ? last - 1 : last)}
                 y1={y(trendAt(hs))}
-                y2={y(trendAt(last - 1))}
+                y2={y(trendAt(live ? last - 1 : last))}
                 className="mchart-trend"
               />
               {/* Into the month in progress it's a forecast, so it's dashed. */}
-              <line
-                x1={cx(last - 1)}
-                x2={cx(last)}
-                y1={y(trendAt(last - 1))}
-                y2={y(trendAt(last))}
-                className="mchart-trend forecast"
-              />
+              {live && (
+                <line
+                  x1={cx(last - 1)}
+                  x2={cx(last)}
+                  y1={y(trendAt(last - 1))}
+                  y2={y(trendAt(last))}
+                  className="mchart-trend forecast"
+                />
+              )}
             </>
           )}
 
-          {data.months.map((m, i) => (
-            <text
-              key={m}
-              x={cx(i)}
-              y={H - 6}
-              textAnchor="middle"
-              className={`mchart-tick ${i === active ? "on" : ""}`}
-            >
-              {/* Sep '26 on a year boundary, so a 1Y view is unambiguous. */}
-              {slot < 26 && i % 2 !== last % 2 && i !== active
-                ? ""
-                : monthShort(m) + (monthDate(m).getMonth() === 0 && n > 6 ? ` ’${String(monthDate(m).getFullYear()).slice(2)}` : "")}
-            </text>
-          ))}
-
-          {/* Hit targets: the whole column, not the bar, so short months and
-              the empty space above them are just as easy to tap. */}
           {data.months.map((m, i) =>
-            i < hs ? null : (
-              <rect
+            labels[i] === null ? null : (
+              <text
                 key={m}
-                x={pad.l + slot * i}
-                y={0}
-                width={slot}
-                height={H}
-                fill="transparent"
-                style={{ cursor: "pointer" }}
-                onPointerEnter={(e) => e.pointerType === "mouse" && onActive(i)}
-                onClick={() => onActive(i)}
-              />
+                // Labels near an edge hang inward from it rather than off it.
+                {...(cx(i) > W - pad.r - 24
+                  ? { x: W - pad.r, textAnchor: "end" }
+                  : cx(i) < pad.l + 24
+                    ? { x: pad.l, textAnchor: "start" }
+                    : { x: cx(i), textAnchor: "middle" })}
+                y={H - 6}
+                className={`mchart-tick ${i === active ? "on" : ""}`}
+              >
+                {labels[i]}
+              </text>
             )
           )}
         </svg>
@@ -282,17 +325,19 @@ function Chart({
   );
 }
 
-function Legend({ color, series }: { color: string; series: MonthlySeries }) {
+function Legend({ color, series, live }: { color: string; series: MonthlySeries; live: boolean }) {
   return (
     <div className="mlegend" aria-hidden="true">
       <span>
         <i className="key-bar" style={{ background: color }} />
         Spent
       </span>
-      <span>
-        <i className="key-bar key-hatch" style={{ color }} />
-        This month
-      </span>
+      {live && (
+        <span>
+          <i className="key-bar key-hatch" style={{ color }} />
+          This month
+        </span>
+      )}
       {series.avg_cents > 0 && (
         <span>
           <i className="key-line avg" />
@@ -314,7 +359,7 @@ function Spark({ cat, data, active }: { cat: MonthlyCategory; data: Data; active
   const n = data.months.length;
   const w = 64;
   const h = 22;
-  const gap = n > 8 ? 1.5 : 2;
+  const gap = n > 24 ? 0.5 : n > 8 ? 1.5 : 2;
   const bw = (w - gap * (n - 1)) / n;
   const max = Math.max(...cat.cents, 1);
   const color = cat.color || "var(--muted)";
@@ -356,21 +401,47 @@ const catName = (c: MonthlyCategory) => c.category_name || "Uncategorized";
  */
 export default function MonthlySpending() {
   const [months, setMonths] = useState("6");
+  const current = monthKey(new Date());
+  // A custom range opens on this year so far — or all of last year, in a
+  // January that would otherwise be one month long.
+  const [from, setFrom] = useState(() => {
+    const now = new Date();
+    return monthKey(new Date(now.getFullYear() - (now.getMonth() === 0 ? 1 : 0), 0, 1));
+  });
+  const [to, setTo] = useState(current);
   const [selected, setSelected] = useState<string | null>(null);
   const [active, setActive] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
   const chartCard = useRef<HTMLDivElement>(null);
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-  const q = useQuery({
-    queryKey: ["cashflow", "monthly", months, tz],
-    queryFn: () =>
-      get<Data>(`/api/cashflow/monthly?${new URLSearchParams({ months, tz })}`),
-  });
-  const d = q.data;
+  const custom = months === "custom";
+  // "YYYY-MM" strings compare correctly as strings.
+  const rangeError = !custom
+    ? null
+    : !from || !to
+      ? "Pick both months."
+      : from > to
+        ? "The start month is after the end month."
+        : to > current
+          ? "The end month hasn't happened yet."
+          : monthsBetween(from, to) > MAX_MONTHS
+            ? "A range can be at most 10 years."
+            : null;
+  const params = new URLSearchParams(custom ? { from, to, tz } : { months, tz }).toString();
 
-  // A new window re-indexes the months, so the selection goes back to now.
-  useEffect(() => setActive(null), [months]);
+  const q = useQuery({
+    queryKey: ["cashflow", "monthly", params],
+    queryFn: () => get<Data>(`/api/cashflow/monthly?${params}`),
+    enabled: !rangeError,
+    // Keep the old chart up while the new window loads, instead of a spinner
+    // flashing in and out on every change of range.
+    placeholderData: keepPreviousData,
+  });
+  const d = rangeError ? undefined : q.data;
+
+  // A new window re-indexes the months, so the selection goes back to the end.
+  useEffect(() => setActive(null), [params]);
 
   const cat = d?.categories.find((c) => catKey(c) === selected) ?? null;
   const series = cat ?? d?.total;
@@ -389,25 +460,51 @@ export default function MonthlySpending() {
     <>
       <div className="section-header">
         <h2>Monthly spending</h2>
-        <div className="chips" style={{ margin: 0, gap: 6 }}>
-          {WINDOWS.map((w) => (
-            <button
-              key={w.key}
-              className={`chip sm ${months === w.key ? "on" : ""}`}
-              onClick={() => setMonths(w.key)}
-            >
-              {w.label}
-            </button>
-          ))}
-        </div>
+        {q.isFetching && !q.isLoading && <div className="spinner sm" aria-label="Loading" />}
       </div>
+      <div className="chips" style={{ marginTop: -4, marginBottom: custom ? 10 : 12 }}>
+        {WINDOWS.map((w) => (
+          <button
+            key={w.key}
+            className={`chip sm ${months === w.key ? "on" : ""}`}
+            onClick={() => setMonths(w.key)}
+            aria-pressed={months === w.key}
+          >
+            {w.label}
+          </button>
+        ))}
+      </div>
+      {custom && (
+        <div className="mrange">
+          <label>
+            <span className="field-label">From</span>
+            <input
+              type="month"
+              value={from}
+              max={to || current}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </label>
+          <label>
+            <span className="field-label">To</span>
+            <input
+              type="month"
+              value={to}
+              min={from}
+              max={current}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </label>
+        </div>
+      )}
+      {rangeError && <p className="error">{rangeError}</p>}
 
-      {q.isLoading && (
+      {q.isLoading && !rangeError && (
         <div className="card center" style={{ minHeight: 280 }}>
           <div className="spinner" />
         </div>
       )}
-      {q.isError && <p className="error">Couldn't load monthly spending.</p>}
+      {q.isError && !rangeError && <p className="error">Couldn't load monthly spending.</p>}
 
       {d && series && (
         <MonthlyBody
@@ -454,12 +551,12 @@ function MonthlyBody({
   chartCard: React.RefObject<HTMLDivElement>;
 }) {
   const last = d.months.length - 1;
-  const inProgress = active === last;
+  const inProgress = d.in_progress && active === last;
   const paced = inProgress && d.days_elapsed >= MIN_PACE_DAYS;
   const value = series.cents[active];
   const compareTo = paced ? series.projected_cents : value;
   const vsAvg = inProgress && !paced ? null : delta(compareTo, series.avg_cents);
-  const monthsOfHistory = last - d.history_start;
+  const monthsOfHistory = (d.in_progress ? last : last + 1) - d.history_start;
 
   const slope = series.trend?.slope_cents ?? 0;
   // Steady means the fit barely moves across the whole history — judged per
@@ -501,7 +598,7 @@ function MonthlyBody({
         </div>
 
         <Chart data={d} series={series} color={color} active={active} onActive={onActive} />
-        <Legend color={color} series={series} />
+        <Legend color={color} series={series} live={d.in_progress} />
 
         <div className="mstats">
           <div>
@@ -548,7 +645,7 @@ function MonthlyBody({
             {d.months.map((m, i) =>
               i < d.history_start ? null : (
                 <tr key={m}>
-                  <th scope="row">{monthLong(m, true)}{i === last ? " (so far)" : ""}</th>
+                  <th scope="row">{monthLong(m, true)}{d.in_progress && i === last ? " (so far)" : ""}</th>
                   <td>{fmtCents(series.cents[i])}</td>
                 </tr>
               )

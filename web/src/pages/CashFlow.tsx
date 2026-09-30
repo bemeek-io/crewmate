@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { get, fmtCents } from "../api/client";
 import type { CashFlow as CashFlowData, CashFlowEntry, VendorSpend } from "../api/types";
 import TxnList from "../components/TxnList";
+import MonthlySpending from "../components/MonthlySpending";
 import { ChevronRightIcon, ChevronDownIcon } from "../components/Icons";
 
 const RANGES = [
@@ -242,6 +243,8 @@ export default function CashFlow() {
               />
             </div>
           </div>
+
+          <MonthlySpending />
 
           <Section
             title="Expenses"

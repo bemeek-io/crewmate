@@ -65,3 +65,51 @@ func (s *Store) CashFlow(ctx context.Context, familyID uuid.UUID, start, end tim
 	}
 	return out, rows.Err()
 }
+
+// MonthlySpendRow is one category's spending in one calendar month.
+type MonthlySpendRow struct {
+	// Month is the first instant of the month as a wall-clock time in the
+	// zone the report was asked for; only its year and month mean anything.
+	Month        time.Time
+	CategoryID   *uuid.UUID
+	CategoryName string
+	Color        string
+	SystemKey    *string
+	Cents        int64 // positive magnitude
+	Count        int
+}
+
+// MonthlySpend totals money out in [start, end) by calendar month and derived
+// category. Months are cut in tz, not UTC: a purchase on the evening of the
+// 31st belongs to the month the family was living in when they made it.
+//
+// Only expenses are counted, the same way CashFlow counts them — refunds are
+// income, not a reduction of what was spent.
+func (s *Store) MonthlySpend(ctx context.Context, familyID uuid.UUID, start, end time.Time, tz string) ([]MonthlySpendRow, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT date_trunc('month', t.occurred_at AT TIME ZONE $4) AS month,
+		       c.id, COALESCE(c.name, ''), COALESCE(c.color, ''), c.system_key,
+		       SUM(-t.amount_cents), COUNT(*)
+		FROM transactions t
+		LEFT JOIN categories c
+		       ON c.family_id = t.family_id AND lower(c.name) = lower(t.note)
+		WHERE t.family_id = $1 AND t.occurred_at >= $2 AND t.occurred_at < $3
+		  AND t.amount_cents < 0
+		GROUP BY month, c.id, c.name, c.color, c.system_key
+		ORDER BY month`, familyID, start, end, tz)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]MonthlySpendRow, 0, 64)
+	for rows.Next() {
+		var r MonthlySpendRow
+		if err := rows.Scan(&r.Month, &r.CategoryID, &r.CategoryName, &r.Color, &r.SystemKey,
+			&r.Cents, &r.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

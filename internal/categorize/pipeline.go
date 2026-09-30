@@ -134,26 +134,19 @@ func (p *Pipeline) process(ctx context.Context, item Item) {
 	}
 	var nudge *push.Notification
 	if match != nil {
-		// Claimed only now, after the transaction itself: a replica that loses
-		// the race for the transaction must not use up the day's nudge.
-		ok, err := p.Store.ClaimInsightNudge(ctx, t.FamilyID, match.SubjectType, match.SubjectKey, insights.NudgeCooldown)
-		if err != nil {
-			p.Log.Warn("claim savings nudge", zap.Error(err))
-		} else if ok {
-			filed := ""
-			if !res.silent {
-				filed = res.category // the ordinary push would have said so
-			}
-			b := insights.BuildNudge(*match, t.AmountCents, t.Payee, filed)
-			nudge = &push.Notification{Title: b.Title, Body: b.Body, URL: b.URL}
+		filed := ""
+		if !res.silent {
+			filed = res.category // the ordinary push would have said so
 		}
+		b := insights.BuildNudge(*match, t.AmountCents, t.Payee, filed)
+		nudge = &push.Notification{Title: b.Title, Body: b.Body, URL: b.URL}
 	}
 	var regular *push.Notification
 	if !res.silent {
 		n := buildNotification(t, res.category)
 		regular = &n
 	}
-	p.notify(ctx, t, regular, nudge)
+	p.notify(ctx, t, regular, nudge, match)
 }
 
 // savingsMatch returns the savings suggestion a new purchase falls under, if
@@ -194,9 +187,11 @@ func (p *Pipeline) savingsMatch(ctx context.Context, t *store.Transaction, res o
 // An unrecognized card notifies everyone. That's the safe direction: a missed
 // notification about real money costs more than a redundant one.
 //
-// Each recipient gets one push at most: the savings nudge if there is one and
-// they want nudges, otherwise the ordinary push if there is one.
-func (p *Pipeline) notify(ctx context.Context, t *store.Transaction, regular, nudge *push.Notification) {
+// Each recipient gets one push at most: the savings nudge if there is one,
+// they want nudges and haven't had one about this suggestion today; otherwise
+// the ordinary push if there is one. Nudges reach exactly the people the
+// ordinary push would, so nobody hears about another cardholder's purchase.
+func (p *Pipeline) notify(ctx context.Context, t *store.Transaction, regular, nudge *push.Notification, match *insights.Suggestion) {
 	var recipients []store.NudgeRecipient
 	if t.DebitCardID != "" {
 		owner, ok, err := p.Store.CardOwner(ctx, t.FamilyID, t.DebitCardID)
@@ -218,7 +213,19 @@ func (p *Pipeline) notify(ctx context.Context, t *store.Transaction, regular, nu
 		}
 	}
 	for _, r := range recipients {
-		if n := pickPush(regular, nudge, r.Wants); n != nil {
+		wants := r.Wants
+		if nudge != nil && wants {
+			// Claimed per person, and only here, after the transaction's own
+			// claim: a replica that loses the race for the transaction must
+			// not use up anyone's nudge for the day.
+			ok, err := p.Store.ClaimInsightNudge(ctx, t.FamilyID, r.UserID,
+				match.SubjectType, match.SubjectKey, insights.NudgeCooldown)
+			if err != nil {
+				p.Log.Warn("claim savings nudge", zap.Error(err))
+			}
+			wants = ok
+		}
+		if n := pickPush(regular, nudge, wants); n != nil {
 			p.Push.SendToUser(ctx, r.UserID, *n)
 		}
 	}

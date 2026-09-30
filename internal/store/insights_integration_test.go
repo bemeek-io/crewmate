@@ -98,19 +98,28 @@ func TestInsightsStore(t *testing.T) {
 		t.Errorf("second restore = %v, want ErrNotFound", err)
 	}
 
-	// One nudge a day per suggestion, claimed atomically.
-	first, err := st.ClaimInsightNudge(ctx, familyID, SubjectMerchant, "doordash", 24*time.Hour)
-	must(err, "claim nudge")
-	again, err := st.ClaimInsightNudge(ctx, familyID, SubjectMerchant, "doordash", 24*time.Hour)
-	must(err, "claim nudge again")
-	if !first || again {
+	// One nudge a day per suggestion per person, claimed atomically.
+	var partnerID uuid.UUID
+	must(st.Pool.QueryRow(ctx, `INSERT INTO users (crew_user_id) VALUES ($1) RETURNING id`,
+		"crew-partner-"+suffix).Scan(&partnerID), "insert partner")
+	claim := func(user uuid.UUID) bool {
+		t.Helper()
+		ok, err := st.ClaimInsightNudge(ctx, familyID, user, SubjectMerchant, "doordash", 24*time.Hour)
+		must(err, "claim nudge")
+		return ok
+	}
+	if first, again := claim(userID), claim(userID); !first || again {
 		t.Errorf("claims = %v, %v; want the first only", first, again)
 	}
+	// The partner's own purchase still nudges them.
+	if !claim(partnerID) {
+		t.Error("partner's nudge was used up by someone else's")
+	}
 	_, err = st.Pool.Exec(ctx, `UPDATE insight_nudges SET last_sent_at = now() - interval '25 hours'
-		WHERE family_id = $1`, familyID)
+		WHERE family_id = $1 AND user_id = $2`, familyID, userID)
 	must(err, "age nudge")
-	if later, err := st.ClaimInsightNudge(ctx, familyID, SubjectMerchant, "doordash", 24*time.Hour); err != nil || !later {
-		t.Errorf("claim after cooldown = %v, %v", later, err)
+	if !claim(userID) {
+		t.Error("claim after cooldown refused")
 	}
 
 	// Settings and the family's zone.

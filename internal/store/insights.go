@@ -195,19 +195,19 @@ func (s *Store) SaveInsightVerdicts(ctx context.Context, familyID uuid.UUID, vs 
 	return nil
 }
 
-// ClaimInsightNudge reserves the right to nudge about a suggestion now. It
-// returns false when a nudge about it went out within cooldown — on any
-// replica, since the check and the claim are one statement.
-func (s *Store) ClaimInsightNudge(ctx context.Context, familyID uuid.UUID, subjectType, subjectKey string, cooldown time.Duration) (bool, error) {
+// ClaimInsightNudge reserves the right to nudge one person about a suggestion
+// now. It returns false when they were nudged about it within cooldown — on
+// any replica, since the check and the claim are one statement.
+func (s *Store) ClaimInsightNudge(ctx context.Context, familyID, userID uuid.UUID, subjectType, subjectKey string, cooldown time.Duration) (bool, error) {
 	var ok bool
 	err := s.Pool.QueryRow(ctx, `
-		INSERT INTO insight_nudges (family_id, subject_type, subject_key, last_sent_at)
-		VALUES ($1,$2,$3, now())
-		ON CONFLICT (family_id, subject_type, subject_key) DO UPDATE
+		INSERT INTO insight_nudges (family_id, user_id, subject_type, subject_key, last_sent_at)
+		VALUES ($1,$2,$3,$4, now())
+		ON CONFLICT (family_id, user_id, subject_type, subject_key) DO UPDATE
 		   SET last_sent_at = now()
-		 WHERE insight_nudges.last_sent_at < now() - make_interval(secs => $4)
+		 WHERE insight_nudges.last_sent_at < now() - make_interval(secs => $5)
 		RETURNING true`,
-		familyID, subjectType, subjectKey, cooldown.Seconds()).Scan(&ok)
+		familyID, userID, subjectType, subjectKey, cooldown.Seconds()).Scan(&ok)
 	if err == pgx.ErrNoRows {
 		return false, nil
 	}

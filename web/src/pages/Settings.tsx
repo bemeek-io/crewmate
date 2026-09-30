@@ -130,7 +130,7 @@ export default function Settings() {
                 <span style={{ display: "block" }}>Savings nudges</span>
                 <span className="muted small">
                   When a purchase matches one of your Ways to save suggestions, the push says what that
-                  spending has cost and what cutting it would save. At most once a day per suggestion.
+                  spending has cost and what cutting it would save. At most once a day per suggestion, and only for your own card or shared spending.
                 </span>
               </span>
             </label>
